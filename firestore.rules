@@ -1,0 +1,58 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: clips
+// Document ID: 8-character alphanumeric code or 3-20 char custom
+// Fields:
+//   - content: string (required, max 100000 chars)
+//   - createdAt: timestamp (required)
+//   - expiresAt: timestamp (required)
+//   - authorUid: string or null (optional)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidClip(data) {
+      return data.keys().hasAll(['content', 'createdAt', 'expiresAt', 'vaultUntil']) &&
+             data.content is string && 
+             data.createdAt is timestamp &&
+             data.expiresAt is timestamp &&
+             data.vaultUntil is timestamp &&
+             (!('authorUid' in data) || data.authorUid == null || (isAuthenticated() && data.authorUid == request.auth.uid));
+    }
+
+    function isWithinTierLimits(data) {
+      return (!('authorUid' in data) || data.authorUid == null) 
+        ? (data.expiresAt - data.createdAt <= duration.value(65, 's'))
+        : (data.expiresAt - data.createdAt <= duration.value(24, 'h') + duration.value(1, 'm'));
+    }
+
+    match /clips/{code} {
+      allow create: if (code.matches("^[A-Z0-9]{8}$") || code.matches("^[A-Z0-9-]{3,20}$")) && 
+                      isValidClip(request.resource.data) &&
+                      isWithinTierLimits(request.resource.data) &&
+                      request.resource.data.expiresAt > request.time - duration.value(1, 'm');
+
+      allow get: if true;
+      allow delete: if true;
+
+      allow update: if isAuthenticated() && 
+                       resource.data.authorUid == request.auth.uid &&
+                       request.time < resource.data.vaultUntil &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['expiresAt']);
+      
+      allow list: if isAuthenticated() && resource.data.authorUid == request.auth.uid;
+    }
+
+    match /test/connection {
+      allow get: if true;
+    }
+  }
+}

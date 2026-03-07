@@ -1,0 +1,32 @@
+{
+  "entities": {
+    "Clip": {
+      "title": "Clip",
+      "description": "A clipboard snippet shared via an 8-character alphanumeric code or custom 3-20 character code.",
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "The text content of the clipboard (up to 100,000 characters)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the clip was created."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the clip expires."
+        }
+      },
+      "required": ["content", "createdAt", "expiresAt"]
+    }
+  },
+  "firestore": {
+    "clips/{code}": {
+      "schema": "Clip",
+      "description": "Collection of active clipboard shares, indexed by an 8-character alphanumeric code."
+    }
+  }
+}

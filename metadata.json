@@ -1,0 +1,5 @@
+{
+  "name": "ClipCloud",
+  "description": "A universal clipboard with three tiers: Free (Guest), Pro (Login), and Pro Max (Cloud Storage). Manage your active clips with the Pro Max Cloud Storage dashboard.",
+  "requestFramePermissions": []
+}
