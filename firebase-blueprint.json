@@ -2,12 +2,12 @@
   "entities": {
     "Clip": {
       "title": "Clip",
-      "description": "A clipboard snippet shared via an 8-character alphanumeric code or custom 3-20 character code.",
+      "description": "A clipboard snippet shared via an 8-character alphanumeric code. Expires in 60 seconds.",
       "type": "object",
       "properties": {
         "content": {
           "type": "string",
-          "description": "The text content of the clipboard (up to 100,000 characters)."
+          "description": "The text content of the clipboard."
         },
         "createdAt": {
           "type": "string",
@@ -18,15 +18,79 @@
           "type": "string",
           "format": "date-time",
           "description": "When the clip expires."
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "Optional UID of the creator (for Pro/ProMax history)."
         }
       },
       "required": ["content", "createdAt", "expiresAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile and subscription tier info.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "tier": { "type": "string", "enum": ["guest", "pro", "promax"] },
+        "onboardingSeen": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "apiKey": { "type": "string" }
+      },
+      "required": ["uid", "email", "tier"]
+    },
+    "Folder": {
+      "title": "Folder",
+      "description": "A shared folder for ProMax teams.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerUid", "members"]
+    },
+    "Bundle": {
+      "title": "Bundle",
+      "description": "A collection of clips.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "clipIds": { "type": "array", "items": { "type": "string" } },
+        "ownerUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "clipIds", "ownerUid", "createdAt"]
     }
   },
   "firestore": {
     "clips/{code}": {
       "schema": "Clip",
-      "description": "Collection of active clipboard shares, indexed by an 8-character alphanumeric code."
+      "description": "Collection of active clipboard shares."
+    },
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and tier settings."
+    },
+    "users/{userId}/history/{clipId}": {
+      "schema": "Clip",
+      "description": "Private history of clips for Pro/ProMax users."
+    },
+    "folders/{folderId}": {
+      "schema": "Folder",
+      "description": "Team folders for ProMax users."
+    },
+    "folders/{folderId}/clips/{clipId}": {
+      "schema": "Clip",
+      "description": "Clips stored within a team folder."
+    },
+    "bundles/{bundleId}": {
+      "schema": "Bundle",
+      "description": "User-created bundles of clips."
     }
   }
 }
