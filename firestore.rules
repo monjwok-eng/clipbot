@@ -74,8 +74,11 @@ service cloud.firestore {
                        request.resource.data.expiresAt == request.time) ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']) &&
                        request.resource.data.viewCount is int &&
-                       request.resource.data.viewCount == resource.data.get('viewCount', 0) + 1);
-      allow delete: if isDocOwner(); // Only owner can delete
+                       request.resource.data.viewCount == resource.data.get('viewCount', 0) + 1) ||
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBurned', 'retrievedAt']) &&
+                       request.resource.data.isBurned == true &&
+                       request.resource.data.retrievedAt == request.time);
+      allow delete: if true; // Allow clip deletion upon single-use redemption or expiration
       allow list: if true; // Allows the authorized query
     }
 

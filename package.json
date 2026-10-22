@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.44.0",
+    "@stripe/stripe-js": "^9.9.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "better-sqlite3": "^12.4.1",
@@ -29,6 +30,7 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "stripe": "^22.3.1",
     "vite": "^6.2.0"
   },
   "devDependencies": {

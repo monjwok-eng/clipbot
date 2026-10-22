@@ -40,7 +40,7 @@ const steps = [
   },
   {
     title: "Security & Privacy",
-    description: "Clips are temporary. Free clips vanish in 60s. Pro clips last 24h. Everything is purged automatically.",
+    description: "Clips are temporary. Free clips stay active for 1 hour. Pro clips last up to 24h. Everything is purged automatically.",
     icon: <Lock className="w-8 h-8" />,
     color: "bg-amber-500",
     accent: "text-black"
@@ -69,7 +69,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
-        className="bg-[#E4E3E0] border-2 border-[#141414] max-w-lg w-full rounded-sm shadow-[16px_16px_0px_0px_rgba(20,20,20,1)] overflow-hidden flex flex-col"
+        className="bg-[#E4E3E0] border border-[#141414] max-w-lg w-full rounded-md shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] overflow-hidden flex flex-col"
       >
         {/* Progress Bar */}
         <div className="flex h-2 bg-[#141414]/10">
@@ -90,7 +90,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
               exit={{ opacity: 0, x: -20 }}
               className="space-y-6 text-center"
             >
-              <div className={`w-16 h-16 ${steps[currentStep].color} ${steps[currentStep].accent} rounded-sm flex items-center justify-center mx-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]`}>
+              <div className={`w-16 h-16 ${steps[currentStep].color} ${steps[currentStep].accent} rounded-md flex items-center justify-center mx-auto shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]`}>
                 {steps[currentStep].icon}
               </div>
               
@@ -108,7 +108,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
           <div className="pt-4 flex flex-col gap-3">
             <button 
               onClick={nextStep}
-              className="w-full bg-[#141414] text-[#E4E3E0] py-4 rounded-sm font-bold uppercase tracking-[0.2em] hover:bg-[#141414]/90 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+              className="w-full bg-[#141414] text-[#E4E3E0] py-4 rounded-md font-bold uppercase tracking-[0.2em] hover:bg-[#141414]/90 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
             >
               {currentStep === steps.length - 1 ? (
                 <>

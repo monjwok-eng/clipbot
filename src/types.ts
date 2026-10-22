@@ -1,5 +1,12 @@
 import { Timestamp } from 'firebase/firestore';
 
+export interface ClipFile {
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  downloadUrl: string;
+}
+
 export interface ClipData {
   id: string;
   content?: string;
@@ -12,6 +19,11 @@ export interface ClipData {
   fileSize?: number;
   downloadUrl?: string;
   hasFile?: boolean;
+  files?: ClipFile[];
+  usageMode?: 'single' | 'multi';
+  maxRedemptions?: number; // e.g. 1, 2, 5, 10, or -1 (unlimited)
+  viewCount?: number;
+  burnOnRead?: boolean;
 }
 
 export interface Bundle {
@@ -21,3 +33,4 @@ export interface Bundle {
   ownerUid: string;
   createdAt: Timestamp;
 }
+

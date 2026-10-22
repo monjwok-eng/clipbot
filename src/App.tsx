@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -32,10 +33,12 @@ import {
   MoreHorizontal,
   Camera
 } from 'lucide-react';
-import BundleManager from './components/BundleManager';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
+import { loadStripe } from '@stripe/stripe-js';
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
 import { GoogleGenAI } from "@google/genai";
 import { 
   onAuthStateChanged, 
@@ -59,12 +62,10 @@ import {
   where,
   collection,
   onSnapshot,
-  orderBy,
-  arrayUnion
+  orderBy
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { Onboarding } from './components/Onboarding';
-import { BundleManager } from './components/BundleManager';
 
 // --- Types ---
 
@@ -105,7 +106,8 @@ interface ClipData {
 
 // --- Constants ---
 
-const EXPIRATION_SECONDS = 60;
+const EXPIRATION_SECONDS = 3600; // 1 hour default expiration (increased from 60s)
+const FILE_EXPIRATION_SECONDS = 3600; // 1 hour for file transfers
 
 // --- Helper Functions ---
 
@@ -136,6 +138,26 @@ function generateCode(length: number = 8): string {
   return result;
 }
 
+let globalServerOffset = 0;
+export function getSyncedNow() {
+  return Date.now() + globalServerOffset;
+}
+
+export function formatTime(seconds: number): string {
+  if (seconds >= 3600) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h}h ${m}m ${s < 10 ? '0' : ''}${s}s`;
+  }
+  if (seconds >= 60) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}m ${s < 10 ? '0' : ''}${s}s`;
+  }
+  return `${seconds}s`;
+}
+
 // --- Components ---
 
 const LandingPage = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
@@ -158,11 +180,11 @@ const LandingPage = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () =>
         </p>
       </div>
 
-      <div className="bg-white border-2 border-[#141414] p-6 md:p-8 rounded-sm shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] md:shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] space-y-6 md:space-y-8">
+      <div className="bg-white border border-[#141414] p-6 md:p-8 rounded-md shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] md:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] space-y-6 md:space-y-8">
         <div className="space-y-4">
           <button 
             onClick={onLogin}
-            className="w-full bg-[#141414] text-[#E4E3E0] py-4 md:py-6 rounded-sm font-bold uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 text-xs md:text-base"
+            className="w-full bg-[#141414] text-[#E4E3E0] py-4 md:py-6 rounded-md font-bold uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 text-xs md:text-base"
           >
             <Zap className="w-4 h-4 md:w-5 md:h-5 text-emerald-400" />
             Login with Google
@@ -182,12 +204,12 @@ const LandingPage = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () =>
         <div className="space-y-4">
           <button 
             onClick={onGuest}
-            className="w-full border-2 border-[#141414] text-[#141414] py-4 md:py-6 rounded-sm font-bold uppercase tracking-[0.2em] hover:bg-[#141414] hover:text-[#E4E3E0] transition-all flex items-center justify-center gap-3 text-xs md:text-base"
+            className="w-full border border-[#141414] text-[#141414] py-4 md:py-6 rounded-md font-bold uppercase tracking-[0.2em] hover:bg-[#141414] hover:text-[#E4E3E0] transition-all flex items-center justify-center gap-3 text-xs md:text-base"
           >
             Continue as Guest
           </button>
           <p className="text-[9px] md:text-[10px] text-center opacity-40 uppercase tracking-widest">
-            Limited to 10k chars & 60s clips
+            Limited to 10k chars & 1h clips
           </p>
         </div>
 
@@ -248,7 +270,7 @@ const Vault = ({
   }, [user]);
 
   const vaultClips = useMemo(() => {
-    const now = Date.now();
+    const now = getSyncedNow();
     const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
     return allUserClips.filter((c: ClipData) => {
       const expireTime = c.expiresAt.toMillis();
@@ -265,6 +287,15 @@ const Vault = ({
     handleCopyCode(id);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleDelete = async (e: React.MouseEvent, clipId: string) => {
+    e.stopPropagation();
+    try {
+      await deleteDoc(doc(db, 'clips', clipId));
+    } catch (err) {
+      console.error("Error deleting clip:", err);
+    }
   };
 
   if (loading) return (
@@ -299,6 +330,12 @@ const Vault = ({
         <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
           {vaultClips.map((clip) => (
             <div key={clip.id} className="border border-[#141414] p-4 rounded-sm bg-white hover:bg-blue-50 transition-colors group relative overflow-hidden">
+              <button 
+                onClick={(e) => handleDelete(e, clip.id)}
+                className="absolute top-2 right-2 p-1 bg-white hover:bg-red-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X className="w-3 h-3 text-red-600" />
+              </button>
               {reactivatingClips[clip.id] > 0 && (
                 <motion.div 
                   initial={{ width: '100%' }}
@@ -311,13 +348,13 @@ const Vault = ({
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold font-mono bg-[#141414] text-white px-2 py-0.5 rounded-sm">{clip.id}</span>
                   <span className={`text-[9px] uppercase tracking-widest font-bold ${
-                    reactivatingClips[clip.id] > 0 || clip.expiresAt.toMillis() > Date.now()
+                    reactivatingClips[clip.id] > 0 || clip.expiresAt.toMillis() > getSyncedNow()
                       ? "text-emerald-600" 
                       : "opacity-40"
                   }`}>
-                    {reactivatingClips[clip.id] > 0 || clip.expiresAt.toMillis() > Date.now()
+                    {reactivatingClips[clip.id] > 0 || clip.expiresAt.toMillis() > getSyncedNow()
                       ? "Live / Active" 
-                      : `Expired ${Math.floor((Date.now() - clip.expiresAt.toMillis()) / (1000 * 60 * 60))}h ago`
+                      : `Expired ${Math.floor((getSyncedNow() - clip.expiresAt.toMillis()) / (1000 * 60 * 60))}h ago`
                     }
                   </span>
                   {clip.burnOnRead && (
@@ -368,7 +405,7 @@ const Vault = ({
                         className="text-[9px] font-bold uppercase tracking-widest text-blue-600 flex items-center gap-1 bg-blue-100 px-2 py-1 rounded-sm"
                       >
                         <Clock className="w-3 h-3 animate-pulse" />
-                        Active: {reactivatingClips[clip.id]}s
+                        Active: {formatTime(reactivatingClips[clip.id])}
                       </motion.div>
                     ) : (
                       <motion.button 
@@ -403,6 +440,27 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [tier, setTier] = useState<'free' | 'pro' | 'promax'>('free');
   const [userClips, setUserClips] = useState<ClipData[]>([]);
+  const [serverOffset, setServerOffset] = useState<number>(0);
+
+  useEffect(() => {
+    const syncTime = async () => {
+      try {
+        const start = Date.now();
+        const res = await fetch('/api/time');
+        const data = await res.json();
+        const end = Date.now();
+        const latency = (end - start) / 2;
+        const calculatedOffset = data.time - end + latency;
+        setServerOffset(calculatedOffset);
+        globalServerOffset = calculatedOffset;
+      } catch (e) {
+        console.warn("Could not sync server time:", e);
+      }
+    };
+    syncTime();
+  }, []);
+
+  const getSyncedNow = () => Date.now() + serverOffset;
   
   useEffect(() => {
     if (!user) return;
@@ -438,24 +496,117 @@ export default function App() {
   const [showLegalModal, setShowLegalModal] = useState(false);
   const [showCookieBanner, setShowCookieBanner] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  useEffect(() => {
+    if (showLoginModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+  }, [showLoginModal]);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showProModal, setShowProModal] = useState(false);
   const [hasDismissedFree, setHasDismissedFree] = useState(false);
-  const [expirationOption, setExpirationOption] = useState<number>(60);
+  const [expirationOption, setExpirationOption] = useState<number>(3600);
   const [isApiBlocked, setIsApiBlocked] = useState(false);
   const [showCustomCodeDropdown, setShowCustomCodeDropdown] = useState(false);
   const [recentCodes, setRecentCodes] = useState<string[]>(JSON.parse(localStorage.getItem('recentCodes') || '[]'));
   const [customCodeInput, setCustomCodeInput] = useState<string>('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [shareMode, setShareMode] = useState<'text' | 'file'>('text');
   const [isDragging, setIsDragging] = useState(false);
   const [burnOnRead, setBurnOnRead] = useState(false);
-  const [activeBundleId, setActiveBundleId] = useState<string | null>(null);
+
+  const addIncomingFiles = (newFiles: File[]) => {
+    if (!newFiles || newFiles.length === 0) return;
+
+    const duplicates: string[] = [];
+    const uniqueNewFiles: File[] = [];
+
+    newFiles.forEach(file => {
+      const isDuplicate = selectedFiles.some(
+        existing => existing.name === file.name && existing.size === file.size
+      );
+      if (isDuplicate) {
+        duplicates.push(file.name);
+      } else {
+        uniqueNewFiles.push(file);
+      }
+    });
+
+    if (duplicates.length > 0) {
+      setStatus({
+        type: 'error',
+        message: duplicates.length === 1 
+          ? `File "${duplicates[0]}" is already attached.` 
+          : `Duplicate files ignored: ${duplicates.join(', ')}`
+      });
+    }
+
+    if (uniqueNewFiles.length === 0) return;
+
+    const combined = [...selectedFiles, ...uniqueNewFiles];
+    const totalSize = combined.reduce((acc, f) => acc + f.size, 0);
+    const maxAllowedSize = (isProMax ? 50 : 10) * 1024 * 1024;
+
+    if (totalSize > maxAllowedSize) {
+      setStatus({
+        type: 'error',
+        message: `Max limit exceeded! Total size (${(totalSize / (1024 * 1024)).toFixed(1)}MB) exceeds ${isProMax ? '50MB' : '10MB'} limit.`
+      });
+    } else if (duplicates.length === 0) {
+      setStatus({ type: 'idle', message: '' });
+    }
+
+    setSelectedFiles(combined);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      addIncomingFiles(Array.from(e.target.files));
+      e.target.value = '';
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      const totalSize = updated.reduce((acc, f) => acc + f.size, 0);
+      const maxAllowedSize = (isProMax ? 50 : 10) * 1024 * 1024;
+      if (totalSize <= maxAllowedSize && status.type === 'error' && status.message.includes('Max limit')) {
+        setStatus({ type: 'idle', message: '' });
+      }
+      return updated;
+    });
+  };
 
   const addRecentCode = (code: string) => {
     const updated = [code, ...recentCodes.filter(c => c !== code)].slice(0, 5);
     setRecentCodes(updated);
     localStorage.setItem('recentCodes', JSON.stringify(updated));
+  };
+
+  const handleCheckout = async (priceId: string) => {
+    const stripe = await stripePromise;
+    const token = await user?.getIdToken();
+    const response = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      },
+      body: JSON.stringify({ priceId }),
+    });
+    const session = await response.json();
+    if (session.error) {
+      console.error("Stripe error:", session.error);
+      setStatus({ type: 'error', message: session.error });
+      return;
+    }
+    const result = await (stripe as any)?.redirectToCheckout({ sessionId: session.id });
+    if (result?.error) {
+      console.error(result.error.message);
+      setStatus({ type: 'error', message: result.error.message });
+    }
   };
   
   const isPro = tier === 'pro' || tier === 'promax';
@@ -540,6 +691,7 @@ export default function App() {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
+      setShowLoginModal(false);
     } catch (err: any) {
       console.error("Login error details:", err);
       console.error("Login error code:", err.code);
@@ -667,14 +819,19 @@ export default function App() {
     
     const checkApi = async () => {
       try {
-        const res = await fetch('/api/health', { credentials: 'include' });
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch('/api/health', { 
+          headers: {
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          } 
+        });
         if (!res.ok) {
           const text = await res.text();
-          if (text.includes("Cookie check") || text.includes("Authenticate in new window")) {
+          if (text.includes("Authenticate")) {
             setIsApiBlocked(true);
             setStatus({ 
               type: 'error', 
-              message: 'Your browser is blocking a required security cookie. Please click "Open in New Tab" to authenticate.' 
+              message: 'Authentication required. Please refresh.' 
             });
           }
         } else {
@@ -763,13 +920,15 @@ export default function App() {
 
     const text = manualText.trim();
     
-    if (!text && !selectedFile) {
-      setStatus({ type: 'error', message: 'Please enter text or select a file.' });
+    if (!text && selectedFiles.length === 0) {
+      setStatus({ type: 'error', message: 'Please enter text or select at least one file.' });
       return;
     }
 
-    if (selectedFile && selectedFile.size > (isProMax ? 50 : 10) * 1024 * 1024) {
-      setStatus({ type: 'error', message: `File too large. Max ${isProMax ? '50' : '10'}MB allowed.` });
+    const totalFileSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
+    const maxAllowedSize = (isProMax ? 50 : 10) * 1024 * 1024;
+    if (selectedFiles.length > 0 && totalFileSize > maxAllowedSize) {
+      setStatus({ type: 'error', message: `Files too large (${(totalFileSize / (1024 * 1024)).toFixed(1)}MB total). Max ${isProMax ? '50' : '10'}MB allowed.` });
       return;
     }
 
@@ -792,8 +951,9 @@ export default function App() {
       }
     }
 
-    const expirationSeconds = isPro ? expirationOption : EXPIRATION_SECONDS;
-    const expiresAt = new Date(Date.now() + expirationSeconds * 1000);
+    const isFileTransfer = selectedFiles.length > 0 || shareMode === 'file';
+    const defaultExpiration = isFileTransfer ? FILE_EXPIRATION_SECONDS : EXPIRATION_SECONDS;
+    const expirationSeconds = isPro ? expirationOption : defaultExpiration;
     
     // Check if custom code already exists
     if (isPro && customCodeInput.trim()) {
@@ -805,65 +965,68 @@ export default function App() {
       }
     }
 
-    // Optimistic Update: Show code immediately
-    setCode(newCode);
-    if (isPro && customCodeInput.trim()) addRecentCode(newCode);
-    setTimeLeft(expirationSeconds);
-    setStatus({ type: 'success', message: 'Clip shared!' });
     const savedText = text;
-    setManualText(''); 
-    setCustomCodeInput('');
-
-    // Sync to Firestore in background
     const path = `clips/${newCode}`;
+    
     try {
-      let downloadUrl = null;
-      if (selectedFile) {
-        setStatus({ type: 'loading', message: 'Uploading file...' });
+      let uploadedFiles: any[] = [];
+      if (selectedFiles.length > 0) {
+        setStatus({ type: 'loading', message: `Uploading ${selectedFiles.length} file(s)...` });
         const formData = new FormData();
-        formData.append('files', selectedFile);
+        selectedFiles.forEach((file) => formData.append('files', file));
+        const token = await user?.getIdToken();
         const uploadRes = await fetch('/api/upload', {
           method: 'POST',
           body: formData,
-          credentials: 'include',
+          headers: {
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          },
         });
         
+        const textResponse = await uploadRes.text();
         const contentType = uploadRes.headers.get("content-type");
+        const isJson = contentType ? contentType.includes("application/json") : false;
+
+        let parsedJson: any = null;
+        if (isJson || textResponse.trim().startsWith('{')) {
+          try {
+            parsedJson = JSON.parse(textResponse);
+          } catch (e) {
+            // Fallback if not valid JSON
+          }
+        }
+
         if (!uploadRes.ok) {
           let errorMessage = 'Upload failed';
-          const text = await uploadRes.text();
-          
-          if (text.includes("Cookie check") || text.includes("Authenticate in new window")) {
+          if (textResponse.includes("Cookie check") || textResponse.includes("Authenticate in new window")) {
             errorMessage = 'Security cookie blocked. Please open in a new tab to authenticate.';
-          } else if (contentType && contentType.includes("application/json")) {
-            try {
-              const errorData = JSON.parse(text);
-              errorMessage = errorData.error || errorMessage;
-            } catch (e) {
-              errorMessage = `Upload failed with status ${uploadRes.status}`;
-            }
+          } else if (parsedJson && parsedJson.error) {
+            errorMessage = parsedJson.error;
           } else {
             errorMessage = `Upload failed with status ${uploadRes.status}`;
           }
           throw new Error(errorMessage);
         }
 
-        if (contentType && contentType.includes("application/json")) {
-          const uploadData = await uploadRes.json();
-          if (uploadData.files && uploadData.files[0]) {
-            downloadUrl = uploadData.files[0].downloadUrl;
+        if (parsedJson) {
+          if (parsedJson.files && Array.isArray(parsedJson.files) && parsedJson.files.length > 0) {
+            uploadedFiles = parsedJson.files;
           } else {
-            throw new Error("Invalid upload response format: " + JSON.stringify(uploadData));
+            throw new Error("Invalid upload response format: " + JSON.stringify(parsedJson));
           }
         } else {
-          const text = await uploadRes.text();
-          if (text.includes("Cookie check") || text.includes("Authenticate in new window")) {
+          if (textResponse.includes("Cookie check") || textResponse.includes("Authenticate in new window")) {
             throw new Error("Security cookie blocked. Please open in a new tab to authenticate.");
           }
-          console.error("Unexpected non-JSON response from /api/upload:", text);
+          console.error("Unexpected non-JSON response from /api/upload:", textResponse);
           throw new Error("Server returned an unexpected response format. Please try again.");
         }
       }
+
+      setStatus({ type: 'loading', message: 'Generating secure sharing code...' });
+
+      // Precise Expiration Time starts exactly from right now (after successful upload!)
+      const expiresAt = new Date(getSyncedNow() + expirationSeconds * 1000);
 
       const clipData: any = {
         content: savedText,
@@ -875,28 +1038,32 @@ export default function App() {
         viewCount: 0
       };
 
-      if (selectedFile) {
-        clipData.fileName = selectedFile.name;
-        clipData.fileType = selectedFile.type;
-        clipData.fileSize = selectedFile.size;
-        clipData.downloadUrl = downloadUrl || null;
+      if (uploadedFiles.length > 0) {
         clipData.hasFile = true;
+        clipData.files = uploadedFiles.map(f => ({
+          fileName: f.fileName,
+          fileType: f.fileType || 'application/octet-stream',
+          fileSize: f.fileSize || 0,
+          downloadUrl: f.downloadUrl
+        }));
+        // Backwards compatibility fields
+        clipData.fileName = uploadedFiles[0].fileName;
+        clipData.fileType = uploadedFiles[0].fileType || 'application/octet-stream';
+        clipData.fileSize = uploadedFiles[0].fileSize || 0;
+        clipData.downloadUrl = uploadedFiles[0].downloadUrl;
       }
 
       await setDoc(doc(db, 'clips', newCode), clipData);
       
-      if (activeBundleId) {
-        await updateDoc(doc(db, 'bundles', activeBundleId), {
-          clipIds: arrayUnion(newCode)
-        });
-      }
-
-      setSelectedFile(null);
+      // Update states and trigger countdown timer ONLY after complete success
+      setCode(newCode);
+      if (isPro && customCodeInput.trim()) addRecentCode(newCode);
+      setTimeLeft(expirationSeconds);
+      setSelectedFiles([]);
+      setManualText(''); 
+      setCustomCodeInput('');
       setStatus({ type: 'success', message: 'Clip shared successfully!' });
     } catch (err) {
-      // Rollback if sync fails
-      setCode(null);
-      setManualText(savedText);
       const errorMessage = err instanceof Error ? err.message : 'Sync failed. Please try again.';
       setStatus({ type: 'error', message: errorMessage });
       if (errorMessage.includes('Security cookie blocked')) {
@@ -981,19 +1148,36 @@ export default function App() {
 
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const now = Timestamp.now();
+        const nowMillis = getSyncedNow();
         
-        if (data.expiresAt && data.expiresAt.toMillis() < (now.toMillis() - 300000)) {
-          // ... (keep existing expiration logic)
+        // 1. Check if already burned and grace period has elapsed
+        if (data.isBurned && data.retrievedAt) {
+          const retrievedMillis = data.retrievedAt.toMillis();
+          const hasFiles = data.hasFile || (data.files && data.files.length > 0);
+          const gracePeriodMs = hasFiles ? 15 * 60 * 1000 : 5 * 60 * 1000; // 15 min for files, 5 min for text
+          if (nowMillis - retrievedMillis > gracePeriodMs) {
+            setStatus({ type: 'error', message: 'This clip has already been read and has self-destructed.' });
+            try {
+              await deleteDoc(docRef);
+            } catch (e) {
+              console.error("Failed to delete clip after grace period:", e);
+            }
+            return;
+          }
+        }
+
+        // 2. Check regular expiration
+        const expiresMillis = data.expiresAt ? data.expiresAt.toMillis() : 0;
+        if (expiresMillis && expiresMillis < nowMillis) {
           const isAuthorProMax = data.tier === 'promax';
           const isCurrentUserProMax = tier === 'promax';
           const isOwner = user && data.authorUid === user.uid;
 
           if (isAuthorProMax) {
             const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
-            if (now.toMillis() - data.expiresAt.toMillis() < sevenDaysInMs) {
+            if (nowMillis - expiresMillis < sevenDaysInMs) {
               if (isOwner && isCurrentUserProMax) {
-                setStatus({ type: 'error', message: 'Clip Expired. You can reactivate this in your Locked Vault for another 60s.' });
+                setStatus({ type: 'error', message: 'Clip Expired. You can reactivate this in your Locked Vault for another 15m.' });
               } else {
                 setStatus({ type: 'error', message: 'Clip Expired. The sender has Pro Max protection, but this specific link is now inactive.' });
               }
@@ -1025,39 +1209,43 @@ export default function App() {
           return next;
         });
         
-        if (data.hasFile) {
-          setStatus({ type: 'success', message: `Clip retrieved! Includes file: ${data.fileName}${data.burnOnRead ? ' (Self-destructed)' : ''}` });
-        } else {
-          setStatus({ type: 'success', message: `Clip retrieved!${data.burnOnRead ? ' (Self-destructed)' : ''}` });
+        const filesList = data.files || (data.hasFile && data.downloadUrl ? [{ fileName: data.fileName, fileType: data.fileType, fileSize: data.fileSize, downloadUrl: data.downloadUrl }] : []);
+        
+        let fileStatusMsg = '';
+        if (filesList.length > 1) {
+          fileStatusMsg = `Includes ${filesList.length} files.`;
+        } else if (filesList.length === 1) {
+          fileStatusMsg = `Includes file: ${filesList[0].fileName}.`;
         }
 
-        if (data.burnOnRead) {
-          try {
-            await deleteDoc(docRef);
-          } catch (e) {
-            console.error("Failed to burn on read:", e);
+        const isBurnOnRead = data.burnOnRead === true;
+
+        if (isBurnOnRead) {
+          const hasFiles = data.hasFile || (data.files && data.files.length > 0);
+          const gracePeriodMs = hasFiles ? 15 * 60 * 1000 : 5 * 60 * 1000;
+          const graceMins = Math.round(gracePeriodMs / 60000);
+          if (!data.isBurned) {
+            setStatus({ type: 'success', message: `Clip retrieved! ${fileStatusMsg} This clip will self-destruct in ${graceMins} minutes.` });
+            try {
+              await updateDoc(docRef, {
+                isBurned: true,
+                retrievedAt: serverTimestamp()
+              });
+            } catch (e) {
+              console.error("Failed to mark clip as burned:", e);
+            }
+          } else {
+            const secondsLeft = Math.max(0, Math.ceil((gracePeriodMs - (nowMillis - data.retrievedAt.toMillis())) / 1000));
+            setStatus({ type: 'success', message: `Clip retrieved! ${fileStatusMsg} Self-destructing in ${formatTime(secondsLeft)}.` });
           }
         } else {
+          setStatus({ type: 'success', message: `Clip retrieved! ${fileStatusMsg}` });
           try {
             await updateDoc(docRef, {
               viewCount: (data.viewCount || 0) + 1
             });
           } catch (e) {
-            console.error("Failed to increment view count:", e);
-          }
-
-          if (data.tier === 'promax') {
-            try {
-              await updateDoc(docRef, { expiresAt: serverTimestamp() });
-            } catch (e) {
-              console.error("Failed to expire Pro Max clip:", e);
-            }
-          } else {
-            try {
-              await deleteDoc(docRef);
-            } catch (e) {
-              console.error("Failed to delete clip after retrieval:", e);
-            }
+            console.error("Failed to update view count:", e);
           }
         }
         
@@ -1075,14 +1263,15 @@ export default function App() {
       setStatus({ type: 'loading', message: 'Reactivating clip...' });
       
       // Set local state FIRST to prevent disappearance
-      setReactivatingClips(prev => ({ ...prev, [clipId]: 60 }));
+      const reactivateDurationSeconds = 900; // 15 minutes
+      setReactivatingClips(prev => ({ ...prev, [clipId]: reactivateDurationSeconds }));
       
-      const newExpiration = new Date(Date.now() + 60 * 1000); // 60 seconds
+      const newExpiration = new Date(Date.now() + reactivateDurationSeconds * 1000);
       await updateDoc(doc(db, 'clips', clipId), {
         expiresAt: Timestamp.fromDate(newExpiration)
       });
       
-      setStatus({ type: 'success', message: `Clip ${clipId} reactivated! You can now copy the code and use it in the GET tab.` });
+      setStatus({ type: 'success', message: `Clip ${clipId} reactivated! Active for 15 minutes in the GET tab.` });
     } catch (err) {
       // Rollback local state if it fails
       setReactivatingClips(prev => {
@@ -1299,12 +1488,6 @@ export default function App() {
               Vault
             </button>
           )}
-          <button 
-            onClick={() => { setActiveTab('share'); setStatus({ type: 'idle', message: '' }); }}
-            className={`flex-1 py-3 sm:py-4 text-[10px] sm:text-sm font-bold uppercase tracking-widest transition-colors ${activeTab === 'share' ? 'bg-[#141414] text-[#E4E3E0]' : 'hover:bg-[#141414]/5'}`}
-          >
-            Share
-          </button>
         </div>
 
         {/* Content Area */}
@@ -1320,7 +1503,6 @@ export default function App() {
               >
                 {!code ? (
                   <>
-                    {user && <BundleManager user={user} tier={tier} allUserClips={userClips} activeBundleId={activeBundleId} setActiveBundleId={setActiveBundleId} />}
                     <div className="space-y-4">
                       <h2 className="text-lg sm:text-3xl font-serif italic">Share a clip</h2>
                       <p className="text-[9px] sm:text-sm opacity-60 max-w-[200px] sm:max-w-xs mx-auto">
@@ -1377,14 +1559,58 @@ export default function App() {
                           <motion.div
                             initial={{ opacity: 0, x: 10 }}
                             animate={{ opacity: 1, x: 0 }}
-                            className="py-4"
+                            className="py-2 space-y-4"
                           >
                             <input 
                               type="file" 
                               id="file-upload" 
+                              multiple
                               className="hidden" 
-                              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                              onChange={handleFileSelect}
                             />
+                            
+                            {selectedFiles.length > 0 && (
+                              <div className="space-y-2 text-left">
+                                <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-[#141414]/70">
+                                  <span>Attached Files ({selectedFiles.length})</span>
+                                  <span className={`font-mono text-[10px] ${selectedFiles.reduce((acc, f) => acc + f.size, 0) > (isProMax ? 50 : 10) * 1024 * 1024 ? 'text-red-600 font-bold' : ''}`}>
+                                    {(selectedFiles.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024)).toFixed(2)} MB / {isProMax ? 50 : 10} MB
+                                  </span>
+                                </div>
+
+                                {selectedFiles.reduce((acc, f) => acc + f.size, 0) > (isProMax ? 50 : 10) * 1024 * 1024 && (
+                                  <div className="p-2.5 bg-red-100 border border-red-300 rounded-sm text-red-700 text-[10px] font-bold flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                                    <span>Exceeds {isProMax ? '50MB' : '10MB'} limit! Please remove some files before generating code.</span>
+                                  </div>
+                                )}
+                                
+                                <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                                  {selectedFiles.map((file, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-200 rounded-sm shadow-sm">
+                                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                                        <div className="w-8 h-8 bg-blue-100 rounded-sm flex items-center justify-center shrink-0">
+                                          <FileText className="w-4 h-4 text-blue-600" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <div className="text-xs font-bold truncate text-[#141414]">{file.name}</div>
+                                          <div className="text-[9px] font-mono opacity-50">{(file.size / 1024).toFixed(1)} KB</div>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => removeFile(idx)}
+                                        className="p-1 hover:bg-red-100 text-red-600 rounded-sm transition-colors ml-2 shrink-0"
+                                        title="Remove file"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
                             <label 
                               htmlFor="file-upload"
                               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -1392,175 +1618,116 @@ export default function App() {
                               onDrop={(e) => {
                                 e.preventDefault();
                                 setIsDragging(false);
-                                if (e.dataTransfer.files?.[0]) {
-                                  setSelectedFile(e.dataTransfer.files[0]);
+                                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                  const dropped = Array.from(e.dataTransfer.files) as File[];
+                                  addIncomingFiles(dropped);
                                 }
                               }}
-                              className={`w-full min-h-[200px] p-8 border-2 border-dashed rounded-sm flex flex-col items-center justify-center gap-4 cursor-pointer transition-all duration-300 relative overflow-hidden ${
-                                selectedFile 
-                                  ? 'bg-blue-50/50 border-blue-500' 
-                                  : isDragging 
-                                    ? 'bg-blue-50 border-blue-500 scale-[1.02] shadow-xl' 
-                                    : 'bg-[#141414]/5 border-[#141414]/20 hover:border-[#141414]/40 hover:bg-[#141414]/10'
+                              className={`w-full min-h-[140px] p-6 border-2 border-dashed rounded-sm flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 relative overflow-hidden ${
+                                isDragging 
+                                  ? 'bg-blue-50 border-blue-500 scale-[1.01] shadow-xl' 
+                                  : 'bg-[#141414]/5 border-[#141414]/20 hover:border-[#141414]/40 hover:bg-[#141414]/10'
                               }`}
                             >
-                              {selectedFile ? (
-                                <motion.div 
-                                  initial={{ opacity: 0, scale: 0.9 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  className="flex flex-col items-center gap-4 w-full"
-                                >
-                                  <div className="relative">
-                                    <div className="w-20 h-20 bg-blue-100 rounded-xl flex items-center justify-center shadow-inner">
-                                      <FileText className="w-10 h-10 text-blue-600" />
-                                    </div>
-                                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="text-center space-y-1 max-w-xs">
-                                    <div className="text-sm font-bold uppercase tracking-widest text-blue-600 truncate w-full">{selectedFile.name}</div>
-                                    <div className="flex items-center justify-center gap-3 text-[10px] font-mono opacity-50">
-                                      <span>{(selectedFile.size / 1024).toFixed(1)} KB</span>
-                                      <span className="w-1 h-1 bg-[#141414]/20 rounded-full"></span>
-                                      <span className="uppercase">{selectedFile.name.split('.').pop()}</span>
-                                    </div>
-                                  </div>
-
-                                  <div className="w-full max-w-[200px] space-y-2">
-                                    <div className="flex justify-between text-[8px] font-bold uppercase tracking-widest opacity-40">
-                                      <span>Security Scan</span>
-                                      <span className="text-emerald-600">Verified</span>
-                                    </div>
-                                    <div className="h-1 w-full bg-[#141414]/10 rounded-full overflow-hidden">
-                                      <motion.div 
-                                        initial={{ width: 0 }}
-                                        animate={{ width: '100%' }}
-                                        transition={{ duration: 1.5, ease: "easeOut" }}
-                                        className="h-full bg-emerald-500"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <button 
-                                    onClick={(e) => { e.preventDefault(); setSelectedFile(null); }}
-                                    className="mt-2 px-6 py-2 bg-white border border-red-100 text-red-600 text-[10px] font-bold uppercase tracking-widest rounded-sm hover:bg-red-50 transition-colors shadow-sm"
-                                  >
-                                    Replace Document
-                                  </button>
-                                </motion.div>
-                              ) : (
-                                <div className="flex flex-col items-center gap-4 text-center">
-                                  <div className={`w-20 h-20 rounded-2xl flex items-center justify-center transition-all duration-500 ${isDragging ? 'bg-blue-100 rotate-12 scale-110' : 'bg-[#141414]/5'}`}>
-                                    <Upload className={`w-10 h-10 transition-all duration-500 ${isDragging ? 'text-blue-600' : 'opacity-20'}`} />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#141414]">
-                                      {isDragging ? 'Drop to upload' : 'Select Document'}
-                                    </div>
-                                    <div className="text-[9px] opacity-40 font-medium max-w-[180px] leading-relaxed">
-                                      Drag and drop or <span className="text-blue-600 underline">browse</span> your files.
-                                      <br />
-                                      <span className="text-[8px] opacity-60">MAX 50MB • PDF, ZIP, IMAGES, VIDEOS</span>
-                                    </div>
-                                  </div>
-                                  
-                                  {isDragging && (
-                                    <motion.div 
-                                      initial={{ opacity: 0, y: 10 }}
-                                      animate={{ opacity: 1, y: 0 }}
-                                      className="absolute inset-0 border-4 border-blue-500/20 pointer-events-none"
-                                    />
-                                  )}
+                              <div className="flex flex-col items-center gap-2 text-center">
+                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isDragging ? 'bg-blue-100 text-blue-600' : 'bg-[#141414]/5'}`}>
+                                  <Upload className="w-6 h-6 opacity-40" />
                                 </div>
-                              )}
+                                <div className="space-y-1">
+                                  <div className="text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">
+                                    {selectedFiles.length > 0 ? '+ Add More Files' : 'Select Files to Share'}
+                                  </div>
+                                  <div className="text-[9px] opacity-50 font-medium">
+                                    Drag & drop multiple files or click to browse
+                                    <br />
+                                    <span className="text-[8px] opacity-70">MAX {isProMax ? '50MB' : '10MB'} • PDF, ZIP, IMAGES, VIDEOS</span>
+                                  </div>
+                                </div>
+                              </div>
                             </label>
                           </motion.div>
                         )}
                       </div>                          
-                          {isPro && (
-                            <>
-                              <motion.div 
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                className="bg-[#141414]/5 p-4 rounded-sm space-y-4 text-left border border-[#141414]/10"
-                              >
-                                <button 
-                                  onClick={() => setShowCustomCodeDropdown(!showCustomCodeDropdown)}
-                                  className="flex justify-between w-full font-bold opacity-50 uppercase text-[10px] tracking-widest"
-                                >
-                                  Custom Code (Optional) {showCustomCodeDropdown ? '▲' : '▼'}
-                                </button>
-                                {showCustomCodeDropdown && (
-                                  <>
-                                    <div className="space-y-2">
-                                      <label className="text-[10px] uppercase tracking-widest font-bold opacity-50">Custom Code (Optional)</label>
-                                      <input 
-                                        type="text"
-                                        value={customCodeInput}
-                                        onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
-                                        placeholder="MY-CUSTOM-CLIP"
-                                        className="w-full p-2 border border-[#141414] rounded-sm font-mono text-sm focus:outline-none"
-                                      />
-                                      {recentCodes.length > 0 && (
-                                        <select 
-                                          onChange={(e) => setCustomCodeInput(e.target.value)}
-                                          className="w-full p-2 border border-[#141414]/20 rounded-sm text-sm"
-                                        >
-                                          <option value="">Recent Codes</option>
-                                          {recentCodes.map(code => <option key={code} value={code}>{code}</option>)}
-                                        </select>
-                                      )}
-                                    </div>
-                                    
-                                    <div className="space-y-2">
-                                      <label className="text-[10px] uppercase tracking-widest font-bold opacity-50">Expiration Time</label>
-                                      <div className="flex gap-2">
-                                        {[
-                                          { label: '60s', value: 60 },
-                                          { label: '1h', value: 3600 },
-                                          { label: '24h', value: 86400 }
-                                        ].map((opt) => (
-                                          <button
-                                            key={opt.value}
-                                            onClick={() => setExpirationOption(opt.value)}
-                                            className={`flex-1 py-2 text-[10px] uppercase font-bold border rounded-sm transition-all ${
-                                              expirationOption === opt.value 
-                                                ? 'bg-[#141414] text-[#E4E3E0] border-[#141414]' 
-                                                : 'border-[#141414]/20 hover:border-[#141414]'
-                                            }`}
-                                          >
-                                            {opt.label}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center justify-between pt-2">
-                                      <div className="flex flex-col">
-                                        <label className="text-[10px] uppercase tracking-widest font-bold opacity-50">Burn on Read</label>
-                                        <span className="text-[8px] opacity-40">Self-destruct after first retrieval</span>
-                                      </div>
-                                      <button 
-                                        onClick={() => setBurnOnRead(!burnOnRead)}
-                                        className={`w-10 h-5 rounded-full relative transition-colors ${burnOnRead ? 'bg-red-500' : 'bg-[#141414]/20'}`}
-                                      >
-                                        <motion.div 
-                                          animate={{ x: burnOnRead ? 20 : 2 }}
-                                          className="absolute top-1 left-0 w-3 h-3 bg-white rounded-full shadow-sm"
-                                        />
-                                      </button>
-                                    </div>
-                                  </>
-                                )}
-                              </motion.div>
-                            </>
-                          )}
+                      
+                      {isPro && (
+                        <div className="bg-[#141414]/5 p-4 rounded-sm space-y-4 text-left border border-[#141414]/10">
+                          <button 
+                            type="button"
+                            onClick={() => setShowCustomCodeDropdown(!showCustomCodeDropdown)}
+                            className="flex justify-between w-full font-bold opacity-50 uppercase text-[10px] tracking-widest"
+                          >
+                            <span>Pro Features (Custom Alias & Expiration)</span>
+                            <span>{showCustomCodeDropdown ? '▲' : '▼'}</span>
+                          </button>
+                          {showCustomCodeDropdown && (
+                            <div className="space-y-3 pt-1">
+                              <div className="space-y-1">
+                                <label className="text-[10px] uppercase tracking-widest font-bold opacity-50">Custom Alias Code</label>
+                                <input 
+                                  type="text"
+                                  value={customCodeInput}
+                                  onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
+                                  placeholder="MY-CUSTOM-CLIP"
+                                  className="w-full p-2 border border-[#141414] rounded-sm font-mono text-sm focus:outline-none"
+                                />
+                              </div>
+                              
+                              <div className="space-y-1">
+                                <label className="text-[10px] uppercase tracking-widest font-bold opacity-50">Expiration Time</label>
+                                <div className="flex gap-2">
+                                  {[
+                                    { label: '15m', value: 900 },
+                                    { label: '30m', value: 1800 },
+                                    { label: '1h', value: 3600 },
+                                    { label: '24h', value: 86400 }
+                                  ].map((opt) => (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      onClick={() => setExpirationOption(opt.value)}
+                                      className={`flex-1 py-2 text-[10px] uppercase font-bold border rounded-sm transition-all ${
+                                        expirationOption === opt.value 
+                                          ? 'bg-[#141414] text-[#E4E3E0] border-[#141414]' 
+                                          : 'bg-white border-[#141414]/20 hover:border-[#141414]'
+                                      }`}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
 
+                              <div className="flex items-center justify-between pt-2">
+                                <div className="flex flex-col">
+                                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-50">Burn on Read</label>
+                                  <span className="text-[8px] opacity-40">Self-destruct after first retrieval</span>
+                                </div>
+                                <button 
+                                  type="button"
+                                  onClick={() => setBurnOnRead(!burnOnRead)}
+                                  className={`w-10 h-5 rounded-full relative transition-colors ${burnOnRead ? 'bg-red-500' : 'bg-[#141414]/20'}`}
+                                >
+                                  <motion.div 
+                                    animate={{ x: burnOnRead ? 20 : 2 }}
+                                    className="absolute top-1 left-0 w-3 h-3 bg-white rounded-full shadow-sm"
+                                  />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+
+
+                      <div className="flex items-center justify-center gap-1.5 text-[10px] font-mono opacity-50 pt-2">
+                        <Clock className="w-3 h-3" />
+                        <span>Code expires in {formatTime(isPro ? expirationOption : (selectedFiles.length > 0 || shareMode === 'file' ? FILE_EXPIRATION_SECONDS : EXPIRATION_SECONDS))}</span>
+                      </div>
 
                       <button 
                         onClick={handleShare}
-                        disabled={status.type === 'loading' || (!manualText.trim() && !selectedFile)}
+                        disabled={status.type === 'loading' || (!manualText.trim() && selectedFiles.length === 0)}
                         className="w-full bg-[#141414] text-[#E4E3E0] py-4 sm:py-6 rounded-sm font-bold uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
                       >
                         {status.type === 'loading' ? <RefreshCw className="animate-spin w-5 h-5" /> : <Share2 className="w-5 h-5" />}
@@ -1609,7 +1776,7 @@ export default function App() {
                     <div className="flex flex-col items-center gap-4">
                       <div className="flex items-center justify-center gap-2 text-[#141414]/60">
                         <Clock className="w-4 h-4" />
-                        <span className="text-sm font-mono uppercase tracking-widest">Expires in {timeLeft}s</span>
+                        <span className="text-sm font-mono uppercase tracking-widest">Expires in {formatTime(timeLeft)}</span>
                       </div>
 
                       <button 
@@ -1654,14 +1821,26 @@ export default function App() {
                 </div>
 
                 <div className="space-y-4">
-                  <input 
-                    type="text"
-                    maxLength={20}
-                    placeholder="CODE"
-                    value={inputCode}
-                    onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
-                    className="w-full text-center text-xl sm:text-4xl font-bold font-mono py-4 sm:py-6 border-b-2 border-[#141414] focus:outline-none placeholder:opacity-10"
-                  />
+                  <div className="relative flex items-center">
+                    <input 
+                      type="text"
+                      maxLength={20}
+                      placeholder="CODE"
+                      value={inputCode}
+                      onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
+                      className="w-full text-center text-xl sm:text-4xl font-bold font-mono py-4 sm:py-6 border-b-2 border-[#141414] focus:outline-none placeholder:opacity-10 pr-10"
+                    />
+                    {inputCode && (
+                      <button 
+                        type="button"
+                        onClick={() => { setInputCode(''); setStatus({ type: 'idle', message: '' }); }}
+                        className="absolute right-2 p-2 hover:bg-[#141414]/10 rounded-full text-[#141414] transition-colors"
+                        title="Clear Code"
+                      >
+                        <X className="w-6 h-6" />
+                      </button>
+                    )}
+                  </div>
 
                   {Object.values(reactivatingClips).some((v: number) => v > 0) && (
                     <motion.div 
@@ -1701,23 +1880,82 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     className="border-2 border-[#141414] rounded-sm overflow-hidden"
                   >
-                    <div className="bg-[#141414] text-[#E4E3E0] p-3 flex justify-between items-center">
+                    <div className="bg-[#141414] text-[#E4E3E0] p-3.5 flex justify-between items-center gap-2">
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         <span className="text-[10px] uppercase tracking-widest font-bold font-mono">Clip Retrieved</span>
                       </div>
-                      <button 
-                        onClick={() => setRetrievedClip(null)}
-                        className="hover:opacity-50 transition-opacity"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={() => { setRetrievedClip(null); setStatus({ type: 'idle', message: '' }); }}
+                          className="flex items-center gap-1 bg-[#E4E3E0]/20 hover:bg-[#E4E3E0]/30 text-[#E4E3E0] px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider transition-colors shrink-0"
+                          title="Remove Code & Close"
+                        >
+                          <X className="w-4 h-4" />
+                          <span>Close</span>
+                        </button>
+                      </div>
                     </div>
                     
                     <div className="p-4 sm:p-6 bg-white space-y-6">
-                      {retrievedClip.hasFile && (
+                      {/* Attached Files List */}
+                      {(retrievedClip.files && retrievedClip.files.length > 0) ? (
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-[#141414]/70">
+                            <span>Attached Files ({retrievedClip.files.length})</span>
+                            <span className="text-[10px] font-mono">
+                              {(retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0) / (1024 * 1024)).toFixed(2)} MB
+                            </span>
+                          </div>
+
+                          <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                            {retrievedClip.files.map((file: any, idx: number) => (
+                              <div key={idx} className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-4 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[3px_3px_0px_0px_rgba(59,130,246,0.15)]">
+                                <div className="flex items-center gap-3 w-full sm:w-auto min-w-0 flex-1">
+                                  <div className="w-10 h-10 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
+                                    {file.fileType?.includes('video') ? (
+                                      <Video className="w-5 h-5 text-blue-600" />
+                                    ) : file.fileType?.includes('audio') ? (
+                                      <Music className="w-5 h-5 text-blue-600" />
+                                    ) : (
+                                      <FileText className="w-5 h-5 text-blue-600" />
+                                    )}
+                                  </div>
+                                  <div className="text-left min-w-0 flex-1">
+                                    <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block">
+                                      {file.fileName}
+                                    </div>
+                                    <div className="text-[9px] opacity-60 font-mono">
+                                      {(file.fileSize / (1024 * 1024)).toFixed(2)} MB • {file.fileType?.split('/').pop()?.toUpperCase()}
+                                    </div>
+                                  </div>
+                                </div>
+                                <a 
+                                  href={file.downloadUrl}
+                                  download={file.fileName}
+                                  onClick={(e) => {
+                                    if (isApiBlocked) {
+                                      e.preventDefault();
+                                      setStatus({ 
+                                        type: 'error', 
+                                        message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
+                                      });
+                                    } else {
+                                      setStatus({ type: 'success', message: `Downloading ${file.fileName}...` });
+                                    }
+                                  }}
+                                  className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 font-bold uppercase tracking-widest text-[9px] shadow-[2px_2px_0px_0px_rgba(30,58,138,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none shrink-0"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  Download
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : retrievedClip.hasFile && (
                         <div className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-5 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 shadow-[4px_4px_0px_0px_rgba(59,130,246,0.2)]">
-                          <div className="flex items-center gap-4 w-full sm:w-auto">
+                          <div className="flex items-center gap-4 w-full sm:w-auto min-w-0 flex-1">
                             <div className="w-14 h-14 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
                               {retrievedClip.fileType?.includes('video') ? (
                                 <Video className="w-7 h-7 text-blue-600" />
@@ -1750,7 +1988,7 @@ export default function App() {
                                 setStatus({ type: 'success', message: `Downloading ${retrievedClip.fileName}...` });
                               }
                             }}
-                            className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-[10px] shadow-[4px_4px_0px_0px_rgba(30,58,138,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+                            className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-[10px] shadow-[4px_4px_0px_0px_rgba(30,58,138,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none shrink-0"
                           >
                             <Download className="w-4 h-4" />
                             Download Now
@@ -1934,7 +2172,7 @@ export default function App() {
                       {[
                         "8-Character Codes",
                         "10k Character Limit",
-                        "60s Persistence",
+                        "1h Persistence",
                         "5s Retrieval Delay",
                         "File Sharing (Up to 10MB)"
                       ].map((f, i) => (
@@ -1983,10 +2221,7 @@ export default function App() {
                     </ul>
                   </div>
                   <button 
-                    onClick={() => {
-                      setTier('pro');
-                      setShowProModal(false);
-                    }}
+                    onClick={() => handleCheckout(import.meta.env.VITE_STRIPE_PRICE_PRO || '')}
                     className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all ${
                       tier === 'pro' 
                         ? 'bg-emerald-500 text-black cursor-default' 
@@ -2024,10 +2259,7 @@ export default function App() {
                     </ul>
                   </div>
                   <button 
-                    onClick={() => {
-                      setTier('promax');
-                      setShowProModal(false);
-                    }}
+                    onClick={() => handleCheckout(import.meta.env.VITE_STRIPE_PRICE_PROMAX || '')}
                     className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all ${
                       tier === 'promax' 
                         ? 'bg-blue-500 text-black cursor-default' 
@@ -2118,10 +2350,10 @@ export default function App() {
                 <section className="space-y-4">
                   <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-blue-600">Terms of Service</h3>
                   <div className="space-y-4 text-sm opacity-70 leading-relaxed font-mono">
-                    <p>1. ClipCloud is a temporary data transfer service. We do not provide long-term storage.</p>
-                    <p>2. Users are solely responsible for the content they share. Illegal, harmful, or malicious content is strictly prohibited.</p>
-                    <p>3. We reserve the right to terminate access for users who abuse the service or violate these terms.</p>
-                    <p>4. Service is provided "as is" without warranties of any kind regarding data persistence or security.</p>
+                    <p>1. ClipCloud is a temporary peer-to-peer data transfer service. Files and clips are held temporarily on secure servers until fetched or expired.</p>
+                    <p>2. Single-Use Transfer: Content shared in single-use mode is removed from temporary storage after initial retrieval to preserve privacy.</p>
+                    <p>3. Automatic Expiration: Unclaimed clips automatically expire after their configured duration (e.g. 1h, 24h) and are purged.</p>
+                    <p>4. User Responsibility: Users are solely responsible for content shared. Illegal, harmful, or unauthorized files are strictly prohibited.</p>
                   </div>
                 </section>
 
