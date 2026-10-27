@@ -586,26 +586,33 @@ export default function App() {
   };
 
   const handleCheckout = async (priceId: string) => {
-    const stripe = await stripePromise;
-    const token = await user?.getIdToken();
-    const response = await fetch('/api/create-checkout-session', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      },
-      body: JSON.stringify({ priceId }),
-    });
-    const session = await response.json();
-    if (session.error) {
-      console.error("Stripe error:", session.error);
-      setStatus({ type: 'error', message: session.error });
+    if (!user) {
+      setShowLoginModal(true);
       return;
     }
-    const result = await (stripe as any)?.redirectToCheckout({ sessionId: session.id });
-    if (result?.error) {
-      console.error(result.error.message);
-      setStatus({ type: 'error', message: result.error.message });
+    try {
+      setStatus({ type: 'loading', message: 'Creating secure checkout session...' });
+      const token = await user.getIdToken();
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ priceId }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Failed to create checkout session');
+      }
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+    } catch (err: any) {
+      console.error("Stripe error:", err);
+      setStatus({ type: 'error', message: err.message || 'Payment initialization failed.' });
     }
   };
   
@@ -845,7 +852,7 @@ export default function App() {
     testConnection();
     checkApi();
 
-    // Handle direct link
+    // Handle direct link or payment success callback
     const params = new URLSearchParams(window.location.search);
     const urlCode = params.get('code');
     if (urlCode) {
@@ -853,6 +860,48 @@ export default function App() {
       setActiveTab('get');
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    const payment = params.get('payment');
+    const sessionId = params.get('session_id');
+    if (payment === 'success' && sessionId) {
+      const verifySession = async () => {
+        try {
+          setStatus({ type: 'loading', message: 'Verifying subscription payment...' });
+          const currentUser = auth.currentUser;
+          const token = currentUser ? await currentUser.getIdToken() : '';
+          const res = await fetch('/api/verify-checkout-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token && { 'Authorization': `Bearer ${token}` })
+            },
+            body: JSON.stringify({ sessionId })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            setTier(data.tier);
+            setStatus({ type: 'success', message: `Subscription activated successfully! Welcome to ${data.tier.toUpperCase()}` });
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } else {
+            throw new Error(data.error || 'Verification failed');
+          }
+        } catch (err: any) {
+          console.error("Verification error:", err);
+          setStatus({ type: 'error', message: err.message || 'Payment verification failed.' });
+        }
+      };
+
+      if (auth.currentUser) {
+        verifySession();
+      } else {
+        const unsub = onAuthStateChanged(auth, (u) => {
+          if (u) {
+            verifySession();
+            unsub();
+          }
+        });
+      }
     }
   }, []);
 
@@ -2203,7 +2252,7 @@ export default function App() {
                       <h3 className="text-lg font-bold uppercase tracking-tighter text-emerald-600">Pro</h3>
                       <p className="text-[9px] opacity-50 uppercase tracking-widest font-bold">Power User</p>
                     </div>
-                    <div className="text-3xl font-serif italic">$2.99<span className="text-[10px] opacity-40 italic">/mo</span></div>
+                    <div className="text-3xl font-serif italic">$4.99<span className="text-[10px] opacity-40 italic">/mo</span></div>
                     <ul className="space-y-2">
                       {[
                         "5+ Character Custom Codes",
@@ -2221,7 +2270,7 @@ export default function App() {
                     </ul>
                   </div>
                   <button 
-                    onClick={() => handleCheckout(import.meta.env.VITE_STRIPE_PRICE_PRO || '')}
+                    onClick={() => handleCheckout('price_1UTLR1FslIabHAR8q1FmvScs')}
                     className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all ${
                       tier === 'pro' 
                         ? 'bg-emerald-500 text-black cursor-default' 
@@ -2242,7 +2291,7 @@ export default function App() {
                       </div>
                       <div className="bg-blue-500 text-black text-[7px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-widest">Best Value</div>
                     </div>
-                    <div className="text-3xl font-serif italic">$5.99<span className="text-[10px] opacity-40 italic">/mo</span></div>
+                    <div className="text-3xl font-serif italic">$9.99<span className="text-[10px] opacity-40 italic">/mo</span></div>
                     <ul className="space-y-2">
                       {[
                         "3-4 Character Short Codes",
@@ -2259,7 +2308,7 @@ export default function App() {
                     </ul>
                   </div>
                   <button 
-                    onClick={() => handleCheckout(import.meta.env.VITE_STRIPE_PRICE_PROMAX || '')}
+                    onClick={() => handleCheckout('price_1UTLRhFslIabHAR8lfuTN4fl')}
                     className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all ${
                       tier === 'promax' 
                         ? 'bg-blue-500 text-black cursor-default' 

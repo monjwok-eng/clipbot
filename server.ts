@@ -8,6 +8,7 @@ import os from "os";
 import { createRequire } from 'module';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import Stripe from "stripe";
 
 let stripeClient: Stripe | null = null;
@@ -17,7 +18,7 @@ function getStripe(): Stripe {
     if (!key) {
       throw new Error('STRIPE_SECRET_KEY environment variable is required');
     }
-    stripeClient = new Stripe(key, { apiVersion: '2026-06-24.dahlia' });
+    stripeClient = new Stripe(key, { apiVersion: '2026-08-26.dahlia' as any });
   }
   return stripeClient;
 }
@@ -118,24 +119,123 @@ app.get("/api/time", (req, res) => {
 app.post("/api/create-checkout-session", verifyToken, async (req, res) => {
   try {
     const { priceId } = req.body;
+    const user = (req as any).user;
     if (!priceId) {
       return res.status(400).json({ error: "Invalid price ID" });
     }
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+    const successUrl = `${protocol}://${host}/?payment=success&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${protocol}://${host}/?payment=cancel`;
+
     const session = await getStripe().checkout.sessions.create({
       payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'payment',
-      success_url: `${process.env.APP_URL}/success`,
-      cancel_url: `${process.env.APP_URL}/cancel`,
+      line_items: [{ price: priceId, quantity: 1 }],
+      mode: 'subscription',
+      client_reference_id: user.uid,
+      customer_email: user.email || undefined,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
     });
-    res.json({ id: session.id });
+    res.json({ url: session.url, id: session.id });
   } catch (err: any) {
     console.error("Stripe Checkout Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/verify-checkout-session", verifyToken, async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const authUser = (req as any).user;
+    if (!sessionId) {
+      return res.status(400).json({ error: "Session ID required" });
+    }
+
+    const session = await getStripe().checkout.sessions.retrieve(sessionId, {
+      expand: ['line_items', 'line_items.data.price']
+    });
+
+    if (session.payment_status !== 'paid' && session.status !== 'complete') {
+      return res.status(400).json({ error: "Session not paid or completed yet" });
+    }
+
+    const clientRefId = session.client_reference_id;
+    if (clientRefId && clientRefId !== authUser.uid) {
+      return res.status(403).json({ error: "Unauthorized session mapping" });
+    }
+
+    const targetUid = clientRefId || authUser.uid;
+    const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
+
+    // Determine tier from price ID
+    let tier = 'pro';
+    const lineItems = session.line_items?.data || [];
+    for (const item of lineItems) {
+      const priceId = typeof item.price === 'string' ? item.price : item.price?.id;
+      if (priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
+        tier = 'promax';
+        break;
+      }
+    }
+
+    const dbAdmin = getFirestore();
+    const userRef = dbAdmin.collection('users').doc(targetUid);
+    await userRef.set({
+      tier: tier,
+      stripeCustomerId: customerId || null,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    res.json({ success: true, tier, customerId });
+  } catch (err: any) {
+    console.error("Verify Checkout Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/sync-user-subscription", verifyToken, async (req, res) => {
+  try {
+    const authUser = (req as any).user;
+    const targetUid = authUser.uid;
+
+    const sessions = await getStripe().checkout.sessions.list({ limit: 10 });
+    const userSession = sessions.data.find(s => 
+      s.client_reference_id === targetUid || 
+      (authUser.email && s.customer_email === authUser.email)
+    );
+
+    if (!userSession || (userSession.payment_status !== 'paid' && userSession.status !== 'complete')) {
+      return res.json({ synced: false, message: "No active paid session found" });
+    }
+
+    const fullSession = await getStripe().checkout.sessions.retrieve(userSession.id, {
+      expand: ['line_items']
+    });
+
+    let tier = 'pro';
+    const lineItems = fullSession.line_items?.data || [];
+    for (const item of lineItems) {
+      const priceId = typeof item.price === 'string' ? item.price : item.price?.id;
+      if (priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
+        tier = 'promax';
+        break;
+      }
+    }
+
+    const customerId = typeof fullSession.customer === 'string' ? fullSession.customer : fullSession.customer?.id;
+
+    const dbAdmin = getFirestore();
+    const userRef = dbAdmin.collection('users').doc(targetUid);
+    await userRef.set({
+      tier: tier,
+      stripeCustomerId: customerId || null,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    res.json({ synced: true, tier, customerId });
+  } catch (err: any) {
+    console.error("Sync Subscription Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
