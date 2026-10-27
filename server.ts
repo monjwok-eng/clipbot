@@ -130,14 +130,16 @@ app.post("/api/webhook", express.raw({ type: 'application/json' }), async (req, 
     if (clientRefId) {
       try {
         const fullSession = await getStripe().checkout.sessions.retrieve(session.id, {
-          expand: ['line_items']
+          expand: ['line_items', 'line_items.data.price']
         });
 
         let tier = 'pro';
         const lineItems = fullSession.line_items?.data || [];
         for (const item of lineItems) {
-          const priceId = typeof item.price === 'string' ? item.price : item.price?.id;
-          if (priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
+          const priceObj = item.price;
+          const priceId = typeof priceObj === 'string' ? priceObj : priceObj?.id;
+          const productId = typeof priceObj === 'object' ? (typeof priceObj?.product === 'string' ? priceObj.product : priceObj?.product?.id) : undefined;
+          if (productId === 'prod_VW9oydwY1fS9Oh' || priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
             tier = 'promax';
             break;
           }
@@ -173,17 +175,30 @@ app.get("/api/time", (req, res) => {
 
 app.post("/api/create-checkout-session", verifyToken, async (req, res) => {
   try {
-    const { priceId } = req.body;
+    let { priceId } = req.body;
     const user = (req as any).user;
     if (!priceId) {
-      return res.status(400).json({ error: "Invalid price ID" });
+      return res.status(400).json({ error: "Invalid price or product ID" });
     }
+
+    const stripe = getStripe();
+
+    // If client passed a Product ID (prod_...), look up its active Price ID from Stripe
+    if (priceId.startsWith('prod_')) {
+      const prices = await stripe.prices.list({ product: priceId, active: true, limit: 1 });
+      if (prices.data.length > 0) {
+        priceId = prices.data[0].id;
+      } else {
+        return res.status(400).json({ error: `No active price found for product ${priceId}` });
+      }
+    }
+
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
     const host = req.get('host');
     const successUrl = `${protocol}://${host}/?payment=success&session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${protocol}://${host}/?payment=cancel`;
 
-    const session = await getStripe().checkout.sessions.create({
+    const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       mode: 'subscription',
@@ -223,12 +238,14 @@ app.post("/api/verify-checkout-session", verifyToken, async (req, res) => {
     const targetUid = clientRefId || authUser.uid;
     const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
 
-    // Determine tier from price ID
+    // Determine tier from price or product ID
     let tier = 'pro';
     const lineItems = session.line_items?.data || [];
     for (const item of lineItems) {
-      const priceId = typeof item.price === 'string' ? item.price : item.price?.id;
-      if (priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
+      const priceObj = item.price;
+      const priceId = typeof priceObj === 'string' ? priceObj : priceObj?.id;
+      const productId = typeof priceObj === 'object' ? (typeof priceObj?.product === 'string' ? priceObj.product : priceObj?.product?.id) : undefined;
+      if (productId === 'prod_VW9oydwY1fS9Oh' || priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
         tier = 'promax';
         break;
       }
@@ -265,14 +282,16 @@ app.post("/api/sync-user-subscription", verifyToken, async (req, res) => {
     }
 
     const fullSession = await getStripe().checkout.sessions.retrieve(userSession.id, {
-      expand: ['line_items']
+      expand: ['line_items', 'line_items.data.price']
     });
 
     let tier = 'pro';
     const lineItems = fullSession.line_items?.data || [];
     for (const item of lineItems) {
-      const priceId = typeof item.price === 'string' ? item.price : item.price?.id;
-      if (priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
+      const priceObj = item.price;
+      const priceId = typeof priceObj === 'string' ? priceObj : priceObj?.id;
+      const productId = typeof priceObj === 'object' ? (typeof priceObj?.product === 'string' ? priceObj.product : priceObj?.product?.id) : undefined;
+      if (productId === 'prod_VW9oydwY1fS9Oh' || priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
         tier = 'promax';
         break;
       }

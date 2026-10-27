@@ -585,11 +585,24 @@ export default function App() {
     localStorage.setItem('recentCodes', JSON.stringify(updated));
   };
 
-  const handleCheckout = async (priceId: string) => {
+  const handleCheckout = async (target: string) => {
     if (!user) {
       setShowLoginModal(true);
       return;
     }
+
+    if (target.startsWith('http://') || target.startsWith('https://')) {
+      try {
+        const url = new URL(target);
+        if (user.uid) url.searchParams.set('client_reference_id', user.uid);
+        if (user.email) url.searchParams.set('prefilled_email', user.email);
+        window.location.href = url.toString();
+      } catch (e) {
+        window.location.href = target;
+      }
+      return;
+    }
+
     try {
       setStatus({ type: 'loading', message: 'Creating secure checkout session...' });
       const token = await user.getIdToken();
@@ -599,7 +612,7 @@ export default function App() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({ priceId: target }),
       });
       const data = await response.json();
       if (!response.ok || data.error) {
@@ -647,6 +660,20 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
+
+    // Real-time listener on user document in Firestore for instant tier unlock
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsubUser = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const userData = docSnap.data();
+        if (userData.tier) {
+          setTier(userData.tier);
+        }
+      }
+    }, (err) => {
+      console.warn("User doc listener notice:", err);
+    });
+
     const autoSync = async () => {
       try {
         const token = await user.getIdToken();
@@ -666,6 +693,8 @@ export default function App() {
       }
     };
     autoSync();
+
+    return () => unsubUser();
   }, [user]);
   
   const isPro = tier === 'pro' || tier === 'promax';
@@ -916,28 +945,66 @@ export default function App() {
 
     const payment = params.get('payment');
     const sessionId = params.get('session_id');
-    if (payment === 'success' && sessionId) {
-      const verifySession = async () => {
+    const urlTier = params.get('tier');
+
+    if (payment === 'success') {
+      const processSuccess = async () => {
         try {
-          setStatus({ type: 'loading', message: 'Verifying subscription payment...' });
+          setStatus({ type: 'loading', message: 'Activating your subscription...' });
           const currentUser = auth.currentUser;
-          const token = currentUser ? await currentUser.getIdToken() : '';
-          const res = await fetch('/api/verify-checkout-session', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token && { 'Authorization': `Bearer ${token}` })
-            },
-            body: JSON.stringify({ sessionId })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            setTier(data.tier);
-            setStatus({ type: 'success', message: `Subscription activated successfully! Welcome to ${data.tier.toUpperCase()}` });
+          
+          if (urlTier === 'promax' || urlTier === 'pro') {
+            setTier(urlTier);
+            if (currentUser) {
+              await setDoc(doc(db, 'users', currentUser.uid), {
+                tier: urlTier,
+                updatedAt: serverTimestamp()
+              }, { merge: true });
+            }
+            setStatus({ type: 'success', message: `Subscription activated! Welcome to ${urlTier.toUpperCase()}` });
             window.history.replaceState({}, document.title, window.location.pathname);
-          } else {
-            throw new Error(data.error || 'Verification failed');
+            return;
           }
+
+          if (sessionId) {
+            const token = currentUser ? await currentUser.getIdToken() : '';
+            const res = await fetch('/api/verify-checkout-session', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token && { 'Authorization': `Bearer ${token}` })
+              },
+              body: JSON.stringify({ sessionId })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              setTier(data.tier);
+              setStatus({ type: 'success', message: `Subscription activated successfully! Welcome to ${data.tier.toUpperCase()}` });
+              window.history.replaceState({}, document.title, window.location.pathname);
+              return;
+            }
+          }
+
+          if (currentUser) {
+            const token = await currentUser.getIdToken();
+            const res = await fetch('/api/sync-user-subscription', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            const data = await res.json();
+            if (res.ok && data.synced && data.tier) {
+              setTier(data.tier);
+              setStatus({ type: 'success', message: `Subscription activated! Welcome to ${data.tier.toUpperCase()}` });
+              window.history.replaceState({}, document.title, window.location.pathname);
+              return;
+            }
+          }
+
+          setStatus({ type: 'success', message: 'Payment complete! Subscription syncing...' });
+          window.history.replaceState({}, document.title, window.location.pathname);
         } catch (err: any) {
           console.error("Verification error:", err);
           setStatus({ type: 'error', message: err.message || 'Payment verification failed.' });
@@ -945,11 +1012,11 @@ export default function App() {
       };
 
       if (auth.currentUser) {
-        verifySession();
+        processSuccess();
       } else {
         const unsub = onAuthStateChanged(auth, (u) => {
           if (u) {
-            verifySession();
+            processSuccess();
             unsub();
           }
         });
@@ -1396,37 +1463,38 @@ export default function App() {
             {!user && !isGuest && <LandingPage onLogin={handleLogin} onGuest={handleGuestEnter} />}
           </AnimatePresence>
           {/* Header */}
-      <header className="fixed top-0 left-0 right-0 border-b border-[#141414] p-2 sm:p-4 lg:px-8 flex justify-between items-center bg-[#E4E3E0]/80 backdrop-blur-md z-50">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-[#141414] rounded-sm flex items-center justify-center">
-            <Share2 className="text-[#E4E3E0] w-5 h-5" />
+      <header className="fixed top-0 left-0 right-0 border-b border-[#141414] px-3 sm:px-6 py-2.5 sm:py-3.5 flex justify-between items-center bg-[#E4E3E0]/90 backdrop-blur-md z-50">
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 bg-[#141414] rounded-sm flex items-center justify-center shrink-0">
+            <Share2 className="text-[#E4E3E0] w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tighter uppercase italic font-serif">ClipCloud</h1>
+          <h1 className="text-lg sm:text-2xl font-bold tracking-tighter uppercase italic font-serif whitespace-nowrap">ClipCloud</h1>
         </div>
-        <div className="flex items-center gap-4">
+
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {user ? (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-3">
               {tier !== 'promax' && (
                 <button 
                   onClick={() => setShowProModal(true)}
-                  className="bg-emerald-500 text-black text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full hover:bg-emerald-400 transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  className="bg-emerald-500 text-black text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full hover:bg-emerald-400 transition-all flex items-center gap-1 sm:gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] whitespace-nowrap shrink-0"
                 >
-                  <Zap className="w-3 h-3" />
-                  {tier === 'pro' ? 'Go Pro Max' : 'Upgrade'}
+                  <Zap className="w-3 h-3 shrink-0" />
+                  <span>{tier === 'pro' ? 'Go Pro Max' : 'Upgrade'}</span>
                 </button>
               )}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 sm:gap-3">
                 <div className="text-right hidden sm:block">
-                  <div className="text-[10px] font-bold uppercase tracking-widest leading-none flex items-center justify-end gap-1">
+                  <div className="text-[10px] font-bold uppercase tracking-widest leading-none flex items-center justify-end gap-1 whitespace-nowrap">
                     {user.displayName}
-                    {isPro && <Zap className={`w-2.5 h-2.5 ${isProMax ? 'text-blue-600 fill-blue-600' : 'text-emerald-600 fill-emerald-600'}`} />}
+                    {isPro && <Zap className={`w-2.5 h-2.5 shrink-0 ${isProMax ? 'text-blue-600 fill-blue-600' : 'text-emerald-600 fill-emerald-600'}`} />}
                   </div>
-                  <div className="text-[8px] opacity-40 font-mono">{user.email}</div>
+                  <div className="text-[8px] opacity-40 font-mono truncate max-w-[120px]">{user.email}</div>
                 </div>
                 
-                <div className="relative group">
+                <div className="relative group shrink-0">
                   <div className="absolute -inset-0.5 bg-[#141414] rounded-sm opacity-0 group-hover:opacity-10 transition-opacity"></div>
-                  <div className="relative w-9 h-9 border-2 border-[#141414] rounded-sm overflow-hidden shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] group-hover:translate-x-[-1px] group-hover:translate-y-[-1px] group-hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] transition-all">
+                  <div className="relative w-8 h-8 sm:w-9 sm:h-9 border-2 border-[#141414] rounded-sm overflow-hidden shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] sm:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] transition-all">
                     <img 
                       src={user.photoURL || ''} 
                       alt="" 
@@ -1443,7 +1511,7 @@ export default function App() {
 
                 <button 
                   onClick={handleLogout}
-                  className="ml-1 p-2 border border-transparent hover:border-[#141414] hover:bg-white rounded-sm transition-all group"
+                  className="p-1.5 sm:p-2 border border-transparent hover:border-[#141414] hover:bg-white rounded-sm transition-all group shrink-0"
                   title="Logout"
                 >
                   <X className="w-4 h-4 opacity-40 group-hover:opacity-100 transition-opacity" />
@@ -1453,17 +1521,11 @@ export default function App() {
           ) : (
             <button 
               onClick={() => setShowLoginModal(true)}
-              className="text-[10px] font-bold uppercase tracking-widest border-b border-[#141414] pb-1 hover:opacity-50 transition-opacity"
+              className="text-xs sm:text-sm font-semibold uppercase tracking-widest border-b border-[#141414] pb-0.5 sm:pb-1 hover:opacity-50 transition-opacity whitespace-nowrap shrink-0 mr-2 sm:mr-4"
             >
               Login for Pro
             </button>
           )}
-          <button 
-            onClick={() => setShowOnboarding(true)}
-            className="text-[10px] uppercase tracking-widest font-bold border border-[#141414] px-2 py-1 rounded-sm hover:bg-[#141414] hover:text-[#E4E3E0] transition-colors"
-          >
-            How it works
-          </button>
         </div>
       </header>
 
@@ -2203,12 +2265,17 @@ export default function App() {
             </div>
             <div className="flex items-center gap-6">
               <button 
+                onClick={() => setShowOnboarding(true)}
+                className="text-[10px] font-bold uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity underline underline-offset-4"
+              >
+                How it works
+              </button>
+              <button 
                 onClick={() => setShowLegalModal(true)}
-                className="text-[10px] font-bold uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity"
+                className="text-[10px] font-bold uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity underline underline-offset-4"
               >
                 Privacy & Terms
               </button>
-
             </div>
           </div>
         </footer>
@@ -2322,7 +2389,7 @@ export default function App() {
                     </ul>
                   </div>
                   <button 
-                    onClick={() => handleCheckout('price_1UTLR1FslIabHAR8q1FmvScs')}
+                    onClick={() => handleCheckout('https://buy.stripe.com/test_5kQ4gz8Yycn1dzN8nebwk00')}
                     className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all ${
                       tier === 'pro' 
                         ? 'bg-emerald-500 text-black cursor-default' 
@@ -2360,7 +2427,7 @@ export default function App() {
                     </ul>
                   </div>
                   <button 
-                    onClick={() => handleCheckout('price_1UTLRhFslIabHAR8lfuTN4fl')}
+                    onClick={() => handleCheckout('https://buy.stripe.com/test_6oU14ngr072HdzN6f6bwk01')}
                     className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all ${
                       tier === 'promax' 
                         ? 'bg-blue-500 text-black cursor-default' 
