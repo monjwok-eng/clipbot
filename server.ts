@@ -105,6 +105,61 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 } // Up to 100MB per file
 });
 
+// Stripe webhook endpoint (requires raw body)
+app.post("/api/webhook", express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event: Stripe.Event;
+
+  try {
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (webhookSecret && sig) {
+      event = getStripe().webhooks.constructEvent(req.body, sig, webhookSecret);
+    } else {
+      event = JSON.parse(req.body.toString()) as Stripe.Event;
+    }
+  } catch (err: any) {
+    console.error(`Webhook signature verification failed:`, err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const clientRefId = session.client_reference_id;
+    const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
+
+    if (clientRefId) {
+      try {
+        const fullSession = await getStripe().checkout.sessions.retrieve(session.id, {
+          expand: ['line_items']
+        });
+
+        let tier = 'pro';
+        const lineItems = fullSession.line_items?.data || [];
+        for (const item of lineItems) {
+          const priceId = typeof item.price === 'string' ? item.price : item.price?.id;
+          if (priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
+            tier = 'promax';
+            break;
+          }
+        }
+
+        const dbAdmin = getFirestore();
+        const userRef = dbAdmin.collection('users').doc(clientRefId);
+        await userRef.set({
+          tier: tier,
+          stripeCustomerId: customerId || null,
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+        console.log(`Webhook: Successfully synced user ${clientRefId} to tier ${tier}`);
+      } catch (e) {
+        console.error("Webhook processing error for user sync:", e);
+      }
+    }
+  }
+
+  res.json({ received: true });
+});
+
 app.use(express.json());
 
 // API Routes

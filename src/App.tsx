@@ -615,6 +615,58 @@ export default function App() {
       setStatus({ type: 'error', message: err.message || 'Payment initialization failed.' });
     }
   };
+
+  const handleRestorePurchases = async () => {
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
+    try {
+      setStatus({ type: 'loading', message: 'Restoring purchases from Stripe...' });
+      const token = await user.getIdToken();
+      const res = await fetch('/api/sync-user-subscription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.synced) {
+        setTier(data.tier);
+        setStatus({ type: 'success', message: `Purchases restored! Active tier: ${data.tier.toUpperCase()}` });
+        setShowProModal(false);
+      } else {
+        setStatus({ type: 'error', message: 'No active paid subscription found to restore.' });
+      }
+    } catch (err: any) {
+      console.error("Restore error:", err);
+      setStatus({ type: 'error', message: err.message || 'Failed to restore purchases.' });
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    const autoSync = async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/sync-user-subscription', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const data = await res.json();
+        if (res.ok && data.synced && data.tier) {
+          setTier(data.tier);
+        }
+      } catch (e) {
+        console.warn("Auto-sync notice:", e);
+      }
+    };
+    autoSync();
+  }, [user]);
   
   const isPro = tier === 'pro' || tier === 'promax';
   const isProMax = tier === 'promax';
@@ -2325,14 +2377,24 @@ export default function App() {
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span className="text-[8px] uppercase tracking-[0.3em] font-bold">Enterprise-Grade Security</span>
                 </div>
-                {!user && (
-                  <button 
-                    onClick={() => handleLogin()}
-                    className="text-[9px] font-bold uppercase tracking-widest underline underline-offset-4 hover:text-emerald-600"
-                  >
-                    Login to see your personalized offers
-                  </button>
-                )}
+                <div className="flex items-center gap-4">
+                  {user && (
+                    <button 
+                      onClick={handleRestorePurchases}
+                      className="text-[9px] font-bold uppercase tracking-widest underline underline-offset-4 hover:text-blue-600 transition-colors"
+                    >
+                      Restore Purchases
+                    </button>
+                  )}
+                  {!user && (
+                    <button 
+                      onClick={() => handleLogin()}
+                      className="text-[9px] font-bold uppercase tracking-widest underline underline-offset-4 hover:text-emerald-600"
+                    >
+                      Login to see your personalized offers
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           </motion.div>
@@ -2479,7 +2541,6 @@ export default function App() {
           <Onboarding key="onboarding-modal" onComplete={completeOnboarding} />
         )}
       </AnimatePresence>
-
 
         </>
       )}

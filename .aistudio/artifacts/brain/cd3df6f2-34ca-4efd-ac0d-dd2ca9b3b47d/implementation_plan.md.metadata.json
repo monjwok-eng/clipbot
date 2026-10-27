@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for robust Stripe webhook, client verification, and auto-sync / restore purchases architecture to prevent app crashes and sync failures.",
+  "updatedAt":  "2026-10-27T09:38:02.688785476Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
