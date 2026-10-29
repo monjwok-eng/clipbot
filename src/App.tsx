@@ -64,7 +64,8 @@ import {
   onSnapshot,
   orderBy
 } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, auth, storage } from './firebase';
 import { Onboarding } from './components/Onboarding';
 
 // --- Types ---
@@ -1225,55 +1226,18 @@ export default function App() {
       let uploadedFiles: any[] = [];
       if (selectedFiles.length > 0) {
         setStatus({ type: 'loading', message: `Uploading ${selectedFiles.length} file(s)...` });
-        const formData = new FormData();
-        selectedFiles.forEach((file) => formData.append('files', file));
-        const token = await user?.getIdToken();
-        const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-          headers: {
-            ...(token && { 'Authorization': `Bearer ${token}` })
-          },
-        });
         
-        const textResponse = await uploadRes.text();
-        const contentType = uploadRes.headers.get("content-type");
-        const isJson = contentType ? contentType.includes("application/json") : false;
-
-        let parsedJson: any = null;
-        if (isJson || textResponse.trim().startsWith('{')) {
-          try {
-            parsedJson = JSON.parse(textResponse);
-          } catch (e) {
-            // Fallback if not valid JSON
-          }
-        }
-
-        if (!uploadRes.ok) {
-          let errorMessage = 'Upload failed';
-          if (textResponse.includes("Cookie check") || textResponse.includes("Authenticate in new window")) {
-            errorMessage = 'Security cookie blocked. Please open in a new tab to authenticate.';
-          } else if (parsedJson && parsedJson.error) {
-            errorMessage = parsedJson.error;
-          } else {
-            errorMessage = `Upload failed with status ${uploadRes.status}`;
-          }
-          throw new Error(errorMessage);
-        }
-
-        if (parsedJson) {
-          if (parsedJson.files && Array.isArray(parsedJson.files) && parsedJson.files.length > 0) {
-            uploadedFiles = parsedJson.files;
-          } else {
-            throw new Error("Invalid upload response format: " + JSON.stringify(parsedJson));
-          }
-        } else {
-          if (textResponse.includes("Cookie check") || textResponse.includes("Authenticate in new window")) {
-            throw new Error("Security cookie blocked. Please open in a new tab to authenticate.");
-          }
-          console.error("Unexpected non-JSON response from /api/upload:", textResponse);
-          throw new Error("Server returned an unexpected response format. Please try again.");
-        }
+        uploadedFiles = await Promise.all(selectedFiles.map(async (file) => {
+          const fileRef = ref(storage, `clips/${newCode}/${file.name}`);
+          await uploadBytes(fileRef, file);
+          const downloadUrl = await getDownloadURL(fileRef);
+          return {
+            fileName: file.name,
+            fileType: file.type || 'application/octet-stream',
+            fileSize: file.size,
+            downloadUrl
+          };
+        }));
       }
 
       setStatus({ type: 'loading', message: 'Generating secure sharing code...' });
@@ -1293,16 +1257,11 @@ export default function App() {
 
       if (uploadedFiles.length > 0) {
         clipData.hasFile = true;
-        clipData.files = uploadedFiles.map(f => ({
-          fileName: f.fileName,
-          fileType: f.fileType || 'application/octet-stream',
-          fileSize: f.fileSize || 0,
-          downloadUrl: f.downloadUrl
-        }));
+        clipData.files = uploadedFiles;
         // Backwards compatibility fields
         clipData.fileName = uploadedFiles[0].fileName;
-        clipData.fileType = uploadedFiles[0].fileType || 'application/octet-stream';
-        clipData.fileSize = uploadedFiles[0].fileSize || 0;
+        clipData.fileType = uploadedFiles[0].fileType;
+        clipData.fileSize = uploadedFiles[0].fileSize;
         clipData.downloadUrl = uploadedFiles[0].downloadUrl;
       }
 
