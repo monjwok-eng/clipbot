@@ -438,7 +438,18 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
-  const [tier, setTier] = useState<'free' | 'pro' | 'promax'>('free');
+  const [tier, setTierState] = useState<'free' | 'pro' | 'promax'>(() => {
+    return (localStorage.getItem('clipcloud_user_tier') as any) || 'free';
+  });
+
+  const setTier = (newTier: 'free' | 'pro' | 'promax', userUid?: string) => {
+    setTierState(newTier);
+    localStorage.setItem('clipcloud_user_tier', newTier);
+    const uid = userUid || auth.currentUser?.uid;
+    if (uid) {
+      localStorage.setItem(`clipcloud_tier_${uid}`, newTier);
+    }
+  };
   const [userClips, setUserClips] = useState<ClipData[]>([]);
   const [serverOffset, setServerOffset] = useState<number>(0);
 
@@ -661,13 +672,19 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
+    // Read cached tier for user immediately (0ms delay)
+    const cachedTier = localStorage.getItem(`clipcloud_tier_${user.uid}`) || localStorage.getItem('clipcloud_user_tier');
+    if (cachedTier === 'pro' || cachedTier === 'promax') {
+      setTier(cachedTier as any, user.uid);
+    }
+
     // Real-time listener on user document in Firestore for instant tier unlock
     const userDocRef = doc(db, 'users', user.uid);
     const unsubUser = onSnapshot(userDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const userData = docSnap.data();
         if (userData.tier) {
-          setTier(userData.tier);
+          setTier(userData.tier, user.uid);
         }
       }
     }, (err) => {
@@ -686,7 +703,7 @@ export default function App() {
         });
         const data = await res.json();
         if (res.ok && data.synced && data.tier) {
-          setTier(data.tier);
+          setTier(data.tier, user.uid);
         }
       } catch (e) {
         console.warn("Auto-sync notice:", e);
@@ -704,17 +721,64 @@ export default function App() {
 
   // Auth listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       setAuthLoading(false);
       if (u) {
         setIsGuest(false);
+
+        // Instantly restore cached tier for this user
+        const cachedTier = localStorage.getItem(`clipcloud_tier_${u.uid}`) || localStorage.getItem('clipcloud_user_tier');
+        if (cachedTier === 'pro' || cachedTier === 'promax') {
+          setTier(cachedTier as any, u.uid);
+        }
+
+        // Directly sync user profile document in Firebase Firestore
+        try {
+          const userDocRef = doc(db, 'users', u.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            const data = userDocSnap.data();
+            if (data.tier) {
+              setTier(data.tier, u.uid);
+            }
+          } else {
+            await setDoc(userDocRef, {
+              uid: u.uid,
+              email: u.email,
+              tier: cachedTier || 'free',
+              createdAt: serverTimestamp()
+            }, { merge: true });
+          }
+        } catch (e) {
+          console.warn("Firebase user profile sync notice:", e);
+        }
+
+        // Process any pending tier saved before login
+        const pendingTier = localStorage.getItem('clipcloud_pending_tier');
+        if (pendingTier === 'pro' || pendingTier === 'promax') {
+          setTier(pendingTier as any, u.uid);
+          try {
+            await setDoc(doc(db, 'users', u.uid), {
+              tier: pendingTier,
+              email: u.email,
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+            localStorage.removeItem('clipcloud_pending_tier');
+          } catch (e) {
+            console.error("Error saving pending tier:", e);
+          }
+        }
+
         if (!localStorage.getItem('hasShownPaywall')) {
           setShowProModal(true);
           localStorage.setItem('hasShownPaywall', 'true');
         }
       } else {
-        setTier('free');
+        const globalTier = localStorage.getItem('clipcloud_user_tier');
+        if (globalTier !== 'pro' && globalTier !== 'promax') {
+          setTier('free');
+        }
         localStorage.removeItem('hasShownPaywall');
         setHasDismissedFree(false);
       }
@@ -953,19 +1017,6 @@ export default function App() {
           setStatus({ type: 'loading', message: 'Activating your subscription...' });
           const currentUser = auth.currentUser;
           
-          if (urlTier === 'promax' || urlTier === 'pro') {
-            setTier(urlTier);
-            if (currentUser) {
-              await setDoc(doc(db, 'users', currentUser.uid), {
-                tier: urlTier,
-                updatedAt: serverTimestamp()
-              }, { merge: true });
-            }
-            setStatus({ type: 'success', message: `Subscription activated! Welcome to ${urlTier.toUpperCase()}` });
-            window.history.replaceState({}, document.title, window.location.pathname);
-            return;
-          }
-
           if (sessionId) {
             const token = currentUser ? await currentUser.getIdToken() : '';
             const res = await fetch('/api/verify-checkout-session', {
@@ -978,11 +1029,38 @@ export default function App() {
             });
             const data = await res.json();
             if (res.ok && data.success) {
-              setTier(data.tier);
-              setStatus({ type: 'success', message: `Subscription activated successfully! Welcome to ${data.tier.toUpperCase()}` });
+              setTier(data.tier, currentUser?.uid);
+              if (currentUser) {
+                await setDoc(doc(db, 'users', currentUser.uid), {
+                  uid: currentUser.uid,
+                  email: currentUser.email,
+                  tier: data.tier,
+                  paymentConfirmed: true,
+                  updatedAt: serverTimestamp()
+                }, { merge: true });
+              }
+              setStatus({ type: 'success', message: `Subscription activated! Welcome to ${data.tier.toUpperCase()}` });
               window.history.replaceState({}, document.title, window.location.pathname);
               return;
             }
+          }
+
+          if (urlTier === 'promax' || urlTier === 'pro') {
+            setTier(urlTier, currentUser?.uid);
+            if (currentUser) {
+              await setDoc(doc(db, 'users', currentUser.uid), {
+                uid: currentUser.uid,
+                email: currentUser.email,
+                tier: urlTier,
+                paymentConfirmed: true,
+                updatedAt: serverTimestamp()
+              }, { merge: true });
+            } else {
+              localStorage.setItem('clipcloud_pending_tier', urlTier);
+            }
+            setStatus({ type: 'success', message: `Subscription activated! Welcome to ${urlTier.toUpperCase()}` });
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
           }
 
           if (currentUser) {
@@ -996,7 +1074,14 @@ export default function App() {
             });
             const data = await res.json();
             if (res.ok && data.synced && data.tier) {
-              setTier(data.tier);
+              setTier(data.tier, currentUser.uid);
+              await setDoc(doc(db, 'users', currentUser.uid), {
+                uid: currentUser.uid,
+                email: currentUser.email,
+                tier: data.tier,
+                paymentConfirmed: true,
+                updatedAt: serverTimestamp()
+              }, { merge: true });
               setStatus({ type: 'success', message: `Subscription activated! Welcome to ${data.tier.toUpperCase()}` });
               window.history.replaceState({}, document.title, window.location.pathname);
               return;
@@ -1463,38 +1548,37 @@ export default function App() {
             {!user && !isGuest && <LandingPage onLogin={handleLogin} onGuest={handleGuestEnter} />}
           </AnimatePresence>
           {/* Header */}
-      <header className="fixed top-0 left-0 right-0 border-b border-[#141414] px-3 sm:px-6 py-2.5 sm:py-3.5 flex justify-between items-center bg-[#E4E3E0]/90 backdrop-blur-md z-50">
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 bg-[#141414] rounded-sm flex items-center justify-center shrink-0">
-            <Share2 className="text-[#E4E3E0] w-4 h-4 sm:w-5 sm:h-5" />
+      <header className="fixed top-0 left-0 right-0 border-b border-[#141414] p-2 sm:p-4 lg:px-8 flex justify-between items-center bg-[#E4E3E0]/80 backdrop-blur-md z-50">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-[#141414] rounded-sm flex items-center justify-center">
+            <Share2 className="text-[#E4E3E0] w-5 h-5" />
           </div>
-          <h1 className="text-lg sm:text-2xl font-bold tracking-tighter uppercase italic font-serif whitespace-nowrap">ClipCloud</h1>
+          <h1 className="text-2xl font-bold tracking-tighter uppercase italic font-serif">ClipCloud</h1>
         </div>
-
-        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-4">
           {user ? (
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-4">
               {tier !== 'promax' && (
                 <button 
                   onClick={() => setShowProModal(true)}
-                  className="bg-emerald-500 text-black text-[9px] sm:text-[10px] font-bold uppercase tracking-widest px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full hover:bg-emerald-400 transition-all flex items-center gap-1 sm:gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] whitespace-nowrap shrink-0"
+                  className="bg-emerald-500 text-black text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full hover:bg-emerald-400 transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
                 >
-                  <Zap className="w-3 h-3 shrink-0" />
-                  <span>{tier === 'pro' ? 'Go Pro Max' : 'Upgrade'}</span>
+                  <Zap className="w-3 h-3" />
+                  {tier === 'pro' ? 'Go Pro Max' : 'Upgrade'}
                 </button>
               )}
-              <div className="flex items-center gap-1.5 sm:gap-3">
+              <div className="flex items-center gap-3">
                 <div className="text-right hidden sm:block">
-                  <div className="text-[10px] font-bold uppercase tracking-widest leading-none flex items-center justify-end gap-1 whitespace-nowrap">
+                  <div className="text-[10px] font-bold uppercase tracking-widest leading-none flex items-center justify-end gap-1">
                     {user.displayName}
-                    {isPro && <Zap className={`w-2.5 h-2.5 shrink-0 ${isProMax ? 'text-blue-600 fill-blue-600' : 'text-emerald-600 fill-emerald-600'}`} />}
+                    {isPro && <Zap className={`w-2.5 h-2.5 ${isProMax ? 'text-blue-600 fill-blue-600' : 'text-emerald-600 fill-emerald-600'}`} />}
                   </div>
-                  <div className="text-[8px] opacity-40 font-mono truncate max-w-[120px]">{user.email}</div>
+                  <div className="text-[8px] opacity-40 font-mono">{user.email}</div>
                 </div>
                 
-                <div className="relative group shrink-0">
+                <div className="relative group">
                   <div className="absolute -inset-0.5 bg-[#141414] rounded-sm opacity-0 group-hover:opacity-10 transition-opacity"></div>
-                  <div className="relative w-8 h-8 sm:w-9 sm:h-9 border-2 border-[#141414] rounded-sm overflow-hidden shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] sm:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] transition-all">
+                  <div className="relative w-9 h-9 border-2 border-[#141414] rounded-sm overflow-hidden shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] group-hover:translate-x-[-1px] group-hover:translate-y-[-1px] group-hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] transition-all">
                     <img 
                       src={user.photoURL || ''} 
                       alt="" 
@@ -1511,7 +1595,7 @@ export default function App() {
 
                 <button 
                   onClick={handleLogout}
-                  className="p-1.5 sm:p-2 border border-transparent hover:border-[#141414] hover:bg-white rounded-sm transition-all group shrink-0"
+                  className="ml-1 p-2 border border-transparent hover:border-[#141414] hover:bg-white rounded-sm transition-all group"
                   title="Logout"
                 >
                   <X className="w-4 h-4 opacity-40 group-hover:opacity-100 transition-opacity" />
@@ -2445,14 +2529,6 @@ export default function App() {
                   <span className="text-[8px] uppercase tracking-[0.3em] font-bold">Enterprise-Grade Security</span>
                 </div>
                 <div className="flex items-center gap-4">
-                  {user && (
-                    <button 
-                      onClick={handleRestorePurchases}
-                      className="text-[9px] font-bold uppercase tracking-widest underline underline-offset-4 hover:text-blue-600 transition-colors"
-                    >
-                      Restore Purchases
-                    </button>
-                  )}
                   {!user && (
                     <button 
                       onClick={() => handleLogin()}

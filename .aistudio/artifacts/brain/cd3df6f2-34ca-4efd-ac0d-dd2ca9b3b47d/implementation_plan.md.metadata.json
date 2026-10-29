@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for robust Stripe webhook, client verification, and auto-sync / restore purchases architecture to prevent app crashes and sync failures.",
-  "updatedAt":  "2026-10-27T09:38:02.688785476Z",
+  "summary":  "Implementation plan for permanent dual-persistence (Firestore + Account Local Storage) ensuring subscribed tiers remain saved and unlocked on clipcloud-one.vercel.app without URL parameters.",
+  "updatedAt":  "2026-10-27T11:34:49.700395006Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

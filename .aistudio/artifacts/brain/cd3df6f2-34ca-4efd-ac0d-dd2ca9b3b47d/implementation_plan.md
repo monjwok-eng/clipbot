@@ -1,53 +1,41 @@
-# Robust Stripe Subscription & Error-Resilient Sync Architecture
+# Permanent Tier Dual-Persistence & Instant Restore Plan
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> To prevent app crashes, race conditions, or missed subscription updates when users return from Stripe Checkout, we will implement a production-grade **Webhook-First + Client Verification + Auto-Sync & Restore** architecture.
+> To ensure your subscription tier (`pro` or `promax`) stays active permanently whenever you visit `https://clipcloud-one.vercel.app` (without needing URL parameters), we will implement **Dual-Persistence** (Firestore Database + Local Account Storage).
 
-- **Confirmed Architecture**:
-  1. **Webhook-First (`/api/webhook`)**: Stripe server securely pushes `checkout.session.completed` events to update Firestore asynchronously, independent of browser redirects.
-  2. **Client-Side Verification (`/api/verify-checkout-session`)**: When redirected back with `?payment=success&session_id=...`, the app verifies the session immediately for instant gratification.
-  3. **Auto-Sync on Login (`/api/sync-user-subscription`)**: Automatically checks recent Stripe sessions when a user logs in.
-  4. **Manual Restore Purchases Button**: Added to the upgrade modal so users can manually trigger a sync if their network dropped during redirection.
+- **Confirmed Decisions**:
+  1. **Instant Local Cache**: Tier is cached in `localStorage` keyed by user ID (`clipcloud_tier_${uid}`) for 0ms delay upon opening the app.
+  2. **Firestore Document Sync**: Every time the app opens or a user signs in, the app immediately reads the user document from Firestore (`users/${uid}`) and updates the state.
+  3. **Real-time Listener**: `onSnapshot` listener on `users/${uid}` ensures any backend or Stripe webhook update immediately propagates to the browser.
+  4. **Url Callback Lock**: When returning from `?payment=success&tier=pro`, both Firestore AND `localStorage` are updated simultaneously.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Decouples payment fulfillment from browser redirects so that even if the browser closes or loses connection during checkout, the subscription is successfully recorded by Stripe webhooks and auto-synced upon the user's return.
-- **Key Value**: Zero lost subscriptions, zero crash states, and robust fault tolerance.
+- **What It Does**: Permanently attaches subscription tiers to your account across sessions, browsers, and devices. When you open `https://clipcloud-one.vercel.app` directly, your Pro or Pro Max tier is loaded instantly.
 
 ---
 
-## 2. User Experience & Visual Design
-
-- **Key User Flows**:
-  - Instant success redirect with verification toast.
-  - Automatic background sync on login.
-  - "Restore Purchases" button in the subscription modal for manual recovery.
-- **Visual Identity & Theme**:
-  - Brutalist editorial styling matching ClipCloud.
-
----
-
-## 3. Technical Architecture & Data Strategy
+## 2. Technical Architecture & Data Strategy
 
 ```
-┌──────────────────────┐      1. Checkout     ┌──────────────────────┐
-│  Client App          │ ───────────────────> │  Stripe Checkout     │
-└──────────────────────┘                      └──────────────────────┘
-   ▲                                                      │
-   │ 2. Success Redirect                                  │ 3. Webhook (checkout.session.completed)
-   │    (?payment=success)                                ▼
-   │                                           ┌──────────────────────┐
-   └────────────────────────────────────────── │  Express Backend     │
-        (Verify & Sync via Admin SDK)          │  (/api/webhook)      │
-                                               └──────────────────────┘
-                                                          │
-                                                          ▼
-                                               ┌──────────────────────┐
-                                               │  Firestore (users)   │
-                                               │  tier: 'promax'      │
-                                               └──────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      App Initialization                      │
+└─────────────────────────────────────────────────────────────┘
+                               │
+            ┌──────────────────┴──────────────────┐
+            ▼                                     ▼
+┌─────────────────────────┐             ┌─────────────────────────┐
+│  1. Read Local Cache    │             │  2. Fetch Firestore Doc │
+│  clipcloud_tier_${uid}  │             │  users/${uid}.tier      │
+└─────────────────────────┘             └─────────────────────────┘
+            │                                     │
+            └──────────────────┬──────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Instant UI Unlock: Pro / Pro Max Features Active           │
+└─────────────────────────────────────────────────────────────┘
 ```

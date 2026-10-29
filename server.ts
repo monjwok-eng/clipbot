@@ -269,41 +269,52 @@ app.post("/api/verify-checkout-session", verifyToken, async (req, res) => {
 app.post("/api/sync-user-subscription", verifyToken, async (req, res) => {
   try {
     const authUser = (req as any).user;
-    const targetUid = authUser.uid;
-
-    const sessions = await getStripe().checkout.sessions.list({ limit: 10 });
-    const userSession = sessions.data.find(s => 
-      s.client_reference_id === targetUid || 
-      (authUser.email && s.customer_email === authUser.email)
-    );
-
-    if (!userSession || (userSession.payment_status !== 'paid' && userSession.status !== 'complete')) {
-      return res.json({ synced: false, message: "No active paid session found" });
+    if (!authUser.email) {
+      return res.status(400).json({ error: "Email required for sync" });
     }
 
-    const fullSession = await getStripe().checkout.sessions.retrieve(userSession.id, {
-      expand: ['line_items', 'line_items.data.price']
+    const stripe = getStripe();
+
+    // 1. Search for Customer by email
+    const customers = await stripe.customers.search({
+      query: `email:'${authUser.email}'`,
     });
 
-    let tier = 'pro';
-    const lineItems = fullSession.line_items?.data || [];
-    for (const item of lineItems) {
-      const priceObj = item.price;
-      const priceId = typeof priceObj === 'string' ? priceObj : priceObj?.id;
-      const productId = typeof priceObj === 'object' ? (typeof priceObj?.product === 'string' ? priceObj.product : priceObj?.product?.id) : undefined;
-      if (productId === 'prod_VW9oydwY1fS9Oh' || priceId === 'price_1UTLRhFslIabHAR8lfuTN4fl') {
-        tier = 'promax';
-        break;
-      }
+    if (customers.data.length === 0) {
+      return res.json({ synced: false, message: "Customer not found" });
     }
 
-    const customerId = typeof fullSession.customer === 'string' ? fullSession.customer : fullSession.customer?.id;
+    const customerId = customers.data[0].id;
 
+    // 2. Retrieve active subscriptions for that customer
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customerId,
+      status: 'active',
+      expand: ['data.plan.product']
+    });
+
+    let tier = 'free';
+    
+    // 3. Determine highest tier
+    for (const sub of subscriptions.data) {
+      for (const item of sub.items.data) {
+        const productId = typeof item.plan.product === 'string' ? item.plan.product : item.plan.product.id;
+        if (productId === 'prod_VW9oydwY1fS9Oh') {
+          tier = 'promax';
+          break;
+        } else if (productId === 'prod_VW9nObZEF3Z6xE') {
+          tier = 'pro';
+        }
+      }
+      if (tier === 'promax') break;
+    }
+
+    // 4. Sync Firestore
     const dbAdmin = getFirestore();
-    const userRef = dbAdmin.collection('users').doc(targetUid);
+    const userRef = dbAdmin.collection('users').doc(authUser.uid);
     await userRef.set({
       tier: tier,
-      stripeCustomerId: customerId || null,
+      stripeCustomerId: customerId,
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
 
