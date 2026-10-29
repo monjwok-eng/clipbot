@@ -67,6 +67,8 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
 import { Onboarding } from './components/Onboarding';
+import { IntegrationModal } from './components/IntegrationModal';
+import { GoogleDriveIcon, DropboxIcon, ICloudIcon } from './components/CloudIcons';
 
 // --- Types ---
 
@@ -508,6 +510,7 @@ export default function App() {
   const [showLegalModal, setShowLegalModal] = useState(false);
   const [showCookieBanner, setShowCookieBanner] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [activeIntegration, setActiveIntegration] = useState<string | null>(null);
   useEffect(() => {
     if (showLoginModal) {
       document.body.style.overflow = 'hidden';
@@ -1228,9 +1231,12 @@ export default function App() {
         setStatus({ type: 'loading', message: `Uploading ${selectedFiles.length} file(s)...` });
         
         uploadedFiles = await Promise.all(selectedFiles.map(async (file) => {
+          const startTime = Date.now();
+          console.log(`Starting upload for: ${file.name}`);
           const fileRef = ref(storage, `clips/${newCode}/${file.name}`);
           await uploadBytes(fileRef, file);
           const downloadUrl = await getDownloadURL(fileRef);
+          console.log(`Finished upload for: ${file.name} in ${Date.now() - startTime}ms`);
           return {
             fileName: file.name,
             fileType: file.type || 'application/octet-stream',
@@ -1611,6 +1617,18 @@ export default function App() {
             )}
           </AnimatePresence>
 
+          {/* Cloud Storage Integration Modal */}
+          <IntegrationModal 
+            isOpen={!!activeIntegration} 
+            onClose={() => setActiveIntegration(null)} 
+            service={activeIntegration} 
+            onIntegrate={() => {
+              const serviceName = activeIntegration === 'drive' ? 'Google Drive' : activeIntegration === 'dropbox' ? 'Dropbox' : 'iCloud';
+              setActiveIntegration(null);
+              setStatus({ type: 'success', message: `${serviceName} integration initiated!` });
+            }}
+          />
+
           {/* Terms and Conditions Modal */}
           <AnimatePresence>
             {showTermsModal && (
@@ -1841,7 +1859,7 @@ export default function App() {
                                 </div>
                                 <div className="space-y-1">
                                   <div className="text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">
-                                    {selectedFiles.length > 0 ? '+ Add More Files' : 'Select Files to Share'}
+                                    {selectedFiles.length > 0 ? '+ Add More' : 'Select files from device'}
                                   </div>
                                   <div className="text-[9px] opacity-50 font-medium">
                                     Drag & drop multiple files or click to browse
@@ -1851,6 +1869,32 @@ export default function App() {
                                 </div>
                               </div>
                             </label>
+
+                            <div className="flex items-center justify-center my-2">
+                                <span className="text-[10px] uppercase tracking-widest font-bold opacity-30">or</span>
+                            </div>
+                            
+                            <div className="flex items-center justify-center gap-3">
+                                <span className="text-sm font-serif italic opacity-70">Share from</span>
+                                <button 
+                                  onClick={() => { if (!user || isGuest) { setShowLoginModal(true); } else { setActiveIntegration('drive'); } }}
+                                  className="w-10 h-10 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:border-[#141414]/50" 
+                                  title="Google Drive">
+                                    <GoogleDriveIcon className="w-5 h-5" />
+                                </button>
+                                <button 
+                                  onClick={() => { if (!user || isGuest) { setShowLoginModal(true); } else { setActiveIntegration('dropbox'); } }}
+                                  className="w-10 h-10 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:border-[#141414]/50" 
+                                  title="Dropbox">
+                                    <DropboxIcon className="w-5 h-5" />
+                                </button>
+                                <button 
+                                  onClick={() => { if (!user || isGuest) { setShowLoginModal(true); } else { setActiveIntegration('icloud'); } }}
+                                  className="w-10 h-10 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:border-[#141414]/50" 
+                                  title="iCloud">
+                                    <ICloudIcon className="w-6 h-6" />
+                                </button>
+                            </div>
                           </motion.div>
                         )}
                       </div>                          
