@@ -68,9 +68,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
 import { Onboarding } from './components/Onboarding';
 import { IntegrationModal } from './components/IntegrationModal';
-import { GoogleDrivePickerModal } from './components/GoogleDrivePickerModal';
 import { GoogleDriveIcon, DropboxIcon, ICloudIcon } from './components/CloudIcons';
-import { connectGoogleDrive, getDriveAccessToken, setDriveAccessToken } from './services/googleDrive';
 
 // --- Types ---
 
@@ -513,22 +511,6 @@ export default function App() {
   const [showCookieBanner, setShowCookieBanner] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [activeIntegration, setActiveIntegration] = useState<string | null>(null);
-  const [showDrivePicker, setShowDrivePicker] = useState<boolean>(false);
-  const [driveToken, setDriveToken] = useState<string | null>(getDriveAccessToken());
-
-  const handleConnectGoogleDrive = async () => {
-    try {
-      setStatus({ type: 'loading', message: 'Connecting to Google Drive...' });
-      const token = await connectGoogleDrive();
-      setDriveToken(token);
-      setActiveIntegration(null);
-      setShowDrivePicker(true);
-      setStatus({ type: 'success', message: 'Google Drive connected! Select files to attach.' });
-    } catch (err: any) {
-      console.error('Google Drive connection error:', err);
-      setStatus({ type: 'error', message: err.message || 'Failed to connect Google Drive.' });
-    }
-  };
   useEffect(() => {
     if (showLoginModal) {
       document.body.style.overflow = 'hidden';
@@ -1641,29 +1623,10 @@ export default function App() {
             onClose={() => setActiveIntegration(null)} 
             service={activeIntegration} 
             onIntegrate={() => {
-              if (activeIntegration === 'drive') {
-                handleConnectGoogleDrive();
-              } else {
-                const serviceName = activeIntegration === 'dropbox' ? 'Dropbox' : 'iCloud';
-                setActiveIntegration(null);
-                setStatus({ type: 'success', message: `${serviceName} integration coming soon!` });
-              }
+              const serviceName = activeIntegration === 'drive' ? 'Google Drive' : activeIntegration === 'dropbox' ? 'Dropbox' : 'iCloud';
+              setActiveIntegration(null);
+              setStatus({ type: 'success', message: `${serviceName} integration initiated!` });
             }}
-          />
-
-          {/* Google Drive File Picker Modal */}
-          <GoogleDrivePickerModal 
-            isOpen={showDrivePicker}
-            onClose={() => setShowDrivePicker(false)}
-            token={driveToken}
-            onFilesSelected={(importedFiles) => {
-              addIncomingFiles(importedFiles);
-              setStatus({
-                type: 'success',
-                message: `Attached ${importedFiles.length} file${importedFiles.length === 1 ? '' : 's'} from Google Drive!`
-              });
-            }}
-            onRequestConnect={handleConnectGoogleDrive}
           />
 
           {/* Terms and Conditions Modal */}
@@ -1914,30 +1877,22 @@ export default function App() {
                             <div className="flex items-center justify-center gap-3.5 sm:gap-4">
                                 <span className="text-sm sm:text-base font-serif italic opacity-70">Share from</span>
                                 <button 
-                                  onClick={() => { 
-                                    if (!user || isGuest) { 
-                                      setShowLoginModal(true); 
-                                    } else if (driveToken) {
-                                      setShowDrivePicker(true);
-                                    } else { 
-                                      setActiveIntegration('drive'); 
-                                    } 
-                                  }}
-                                  className="w-12 h-12 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:shadow-md hover:border-[#141414]/50" 
+                                  onClick={() => { if (!user || isGuest) { setShowLoginModal(true); } else { setActiveIntegration('drive'); } }}
+                                  className="w-12 h-12 sm:w-13 sm:h-13 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:border-[#141414]/50" 
                                   title="Google Drive">
                                     <GoogleDriveIcon className="w-7 h-7" />
                                 </button>
                                 <button 
                                   onClick={() => { if (!user || isGuest) { setShowLoginModal(true); } else { setActiveIntegration('dropbox'); } }}
-                                  className="w-12 h-12 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:shadow-md hover:border-[#141414]/50" 
+                                  className="w-12 h-12 sm:w-13 sm:h-13 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:border-[#141414]/50" 
                                   title="Dropbox">
-                                    <DropboxIcon className="w-6 h-6" />
+                                    <DropboxIcon className="w-7 h-7" />
                                 </button>
                                 <button 
                                   onClick={() => { if (!user || isGuest) { setShowLoginModal(true); } else { setActiveIntegration('icloud'); } }}
-                                  className="w-12 h-12 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:shadow-md hover:border-[#141414]/50" 
+                                  className="w-12 h-12 sm:w-13 sm:h-13 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:border-[#141414]/50" 
                                   title="iCloud">
-                                    <ICloudIcon className="w-7 h-7" />
+                                    <ICloudIcon className="w-7.5 h-7.5" />
                                 </button>
                             </div>
                           </motion.div>
