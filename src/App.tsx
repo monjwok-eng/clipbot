@@ -833,13 +833,15 @@ export default function App() {
   const handleGuestEnter = async () => {
     try {
       await signInAnonymously(auth);
-      setIsGuest(true);
-      if (!localStorage.getItem('clipcloud_onboarding_seen')) {
-        setShowOnboarding(true);
+    } catch (e: any) {
+      // Anonymous auth is disabled by default in Firebase; guest session operates locally
+      if (e?.code !== 'auth/admin-restricted-operation') {
+        console.warn("Guest sign-in:", e?.message || e);
       }
-    } catch (e) {
-      console.error(e);
-      setIsGuest(true);
+    }
+    setIsGuest(true);
+    if (!localStorage.getItem('clipcloud_onboarding_seen')) {
+      setShowOnboarding(true);
     }
   };
 
@@ -1351,13 +1353,8 @@ export default function App() {
       return;
     }
 
-    setStatus({ type: 'loading', message: tier === 'free' ? 'Processing (Free Tier)...' : 'Retrieving clip...' });
+    setStatus({ type: 'loading', message: 'Retrieving clip...' });
     
-    // Speed Bump for Free Users
-    if (tier === 'free') {
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    }
-
     const path = `clips/${codeToFetch}`;
     
     try {

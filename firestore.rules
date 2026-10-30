@@ -58,6 +58,10 @@ service cloud.firestore {
              data.createdAt is timestamp;
     }
 
+    match /test/connection {
+      allow read: if true;
+    }
+
     match /bundles/{bundleId} {
       allow get: if isAuthenticated() && request.auth.uid == resource.data.get('ownerUid', '');
       allow list: if isAuthenticated();
