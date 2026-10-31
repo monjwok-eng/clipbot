@@ -109,8 +109,8 @@ interface ClipData {
 
 // --- Constants ---
 
-const EXPIRATION_SECONDS = 3600; // 1 hour default expiration (increased from 60s)
-const FILE_EXPIRATION_SECONDS = 3600; // 1 hour for file transfers
+const EXPIRATION_SECONDS = 60; // 60s default expiration for free users
+const FILE_EXPIRATION_SECONDS = 60; // 60s for file transfers on free tier
 
 // --- Helper Functions ---
 
@@ -212,7 +212,7 @@ const LandingPage = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () =>
             Continue as Guest
           </button>
           <p className="text-[9px] md:text-[10px] text-center opacity-40 uppercase tracking-widest">
-            Limited to 10k chars & 1h clips
+            Limited to 10k chars & 60s clips
           </p>
         </div>
 
@@ -1289,7 +1289,6 @@ export default function App() {
       if (errorMessage.includes('Security cookie blocked')) {
         setIsApiBlocked(true);
       }
-      handleFirestoreError(err, OperationType.CREATE, path);
     }
   };
 
@@ -2424,8 +2423,8 @@ export default function App() {
                       {[
                         "8-Character Codes",
                         "10k Character Limit",
-                        "1h Persistence",
-                        "5s Retrieval Delay",
+                        "60s Persistence",
+                        "Instant Direct Retrieval",
                         "File Sharing (Up to 10MB)"
                       ].map((f, i) => (
                         <li key={i} className="flex gap-2 items-center text-[10px] opacity-70">
