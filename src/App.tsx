@@ -1806,19 +1806,15 @@ export default function App() {
                         >
                           File Clip
                         </button>
-                        <button 
-                          onClick={() => {
-                            if (!isProMax) {
-                              setShowProModal(true);
-                            } else {
-                              setShareMode('collection');
-                            }
-                          }}
-                          className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1 ${shareMode === 'collection' ? 'border-b-2 border-blue-600 text-blue-600 opacity-100' : 'opacity-60 hover:opacity-100 text-blue-600'}`}
-                        >
-                          <Zap className="w-3 h-3 fill-blue-600" />
-                          Collection Box {!isProMax && '🔒'}
-                        </button>
+                        {isProMax && (
+                          <button 
+                            onClick={() => setShareMode('collection')}
+                            className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1 ${shareMode === 'collection' ? 'border-b-2 border-blue-600 text-blue-600 opacity-100' : 'opacity-60 hover:opacity-100 text-blue-600'}`}
+                          >
+                            <Zap className="w-3 h-3 fill-blue-600" />
+                            Collection Box
+                          </button>
+                        )}
                       </div>
 
                     <div className="space-y-4">
@@ -2458,7 +2454,7 @@ export default function App() {
                         </div>
                       )}
 
-                      {retrievedClip.content && (
+                      {retrievedClip.content && !retrievedClip.isCollection && (
                         <div className="space-y-4">
                           <div className="max-h-48 overflow-y-auto custom-scrollbar">
                             <p className="text-sm font-mono whitespace-pre-wrap break-all text-[#141414]/80">
