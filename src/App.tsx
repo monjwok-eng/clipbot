@@ -1508,7 +1508,7 @@ export default function App() {
 
               xhr.onerror = () => reject(new Error('XHR upload error'));
               xhr.ontimeout = () => reject(new Error('XHR upload timeout'));
-              xhr.timeout = 10000;
+              xhr.timeout = 300000; // 5 minute upload window for large files
 
               xhr.open('POST', '/api/upload');
               if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -1517,10 +1517,10 @@ export default function App() {
 
             return uploaded;
           } catch (err) {
-            console.warn("Express asset upload notice, falling back to Firebase Storage:", err);
+            console.warn("Express asset upload notice, attempting Firebase Storage fallback:", err);
           }
 
-          // Fallback Engine: Firebase Storage Resumable Stream
+          // Fallback Engine: Firebase Storage Resumable Stream (with 15s timeout safeguard against iframe CORS hangs)
           const bytesPerFile = new Array(files.length).fill(0);
           activeUploadTasksRef.current = [];
           let lastStorageUpdate = 0;
@@ -1528,6 +1528,10 @@ export default function App() {
           return Promise.all(
             files.map((file, index) => {
               return new Promise<any>((resolve, reject) => {
+                const storageTimeout = setTimeout(() => {
+                  reject(new Error("Storage upload timed out. Please refresh or try again."));
+                }, 15000);
+
                 const fileRef = ref(storage, `clips/${code}/${file.name}`);
                 const uploadTask = uploadBytesResumable(fileRef, file);
                 activeUploadTasksRef.current.push(uploadTask);
@@ -1556,10 +1560,12 @@ export default function App() {
                     }
                   },
                   (err) => {
+                    clearTimeout(storageTimeout);
                     console.error('Firebase upload error:', file.name, err);
                     reject(err);
                   },
                   async () => {
+                    clearTimeout(storageTimeout);
                     try {
                       const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
                       resolve({
@@ -1727,7 +1733,7 @@ export default function App() {
           return;
         }
 
-        setRetrievedClip(data);
+        setRetrievedClip({ id: codeToFetch, ...data });
 
         // Attach real-time snapshot listener so background link updates sync instantly
         if (receiverUnsubRef.current) {
@@ -1736,7 +1742,7 @@ export default function App() {
         }
         receiverUnsubRef.current = onSnapshot(docRef, (snap) => {
           if (snap.exists()) {
-            setRetrievedClip(snap.data());
+            setRetrievedClip({ id: snap.id, ...snap.data() });
           }
         });
 
@@ -1815,41 +1821,138 @@ export default function App() {
       return;
     }
 
-    setStatus({ type: 'loading', message: 'Uploading your submission...' });
+    const targetCode = inputCode.trim() || retrievedClip?.id || retrievedClip?.code;
+    if (!targetCode) {
+      setStatus({ type: 'error', message: 'Missing collection code.' });
+      return;
+    }
+
+    const totalBytes = contributorFiles.reduce((sum, f) => sum + f.size, 0);
+    const maxAllowedSize = 50 * 1024 * 1024;
+    if (totalBytes > maxAllowedSize) {
+      setStatus({ type: 'error', message: `Submission too large (${(totalBytes / (1024 * 1024)).toFixed(1)}MB total). Max 50MB allowed.` });
+      return;
+    }
+
+    setTransferProgress({
+      totalBytes,
+      bytesTransferred: 0,
+      percent: 0,
+      status: 'uploading',
+      fileName: contributorFiles.length === 1 ? contributorFiles[0].name : `${contributorFiles.length} files`,
+      fileCount: contributorFiles.length
+    });
+    setStatus({ type: 'loading', message: `Uploading ${contributorFiles.length} file(s) to collection...` });
 
     try {
       let uploadedFiles: any[] = [];
+
+      // Primary Engine: Fast XHR upload via Express /api/upload with live byte telemetry
       try {
         const formData = new FormData();
         contributorFiles.forEach(f => formData.append('files', f));
-        const res = await fetch('/api/upload', { method: 'POST', body: formData });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.files && data.files.length > 0) {
-            uploadedFiles = data.files.map((f: any) => ({
-              fileName: f.fileName,
-              fileType: f.fileType,
-              fileSize: f.fileSize,
-              downloadUrl: f.downloadUrl.startsWith('/') ? `${window.location.origin}${f.downloadUrl}` : f.downloadUrl
-            }));
-          }
-        }
+        const token = await auth.currentUser?.getIdToken();
+
+        uploadedFiles = await new Promise<any[]>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const currentTransferred = e.loaded;
+              const currentPercent = Math.min(99, Math.round((currentTransferred / (totalBytes || e.total || 1)) * 100));
+              setTransferProgress(prev => prev ? {
+                ...prev,
+                bytesTransferred: currentTransferred,
+                percent: currentPercent,
+                status: 'uploading'
+              } : null);
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const data = JSON.parse(xhr.responseText);
+                if (data.files && data.files.length > 0) {
+                  resolve(data.files.map((f: any) => ({
+                    fileName: f.fileName,
+                    fileType: f.fileType,
+                    fileSize: f.fileSize,
+                    downloadUrl: f.downloadUrl.startsWith('/') ? `${window.location.origin}${f.downloadUrl}` : f.downloadUrl
+                  })));
+                } else {
+                  reject(new Error("No files returned from server"));
+                }
+              } catch (err) {
+                reject(err);
+              }
+            } else {
+              reject(new Error(`Server upload HTTP ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error('XHR upload error'));
+          xhr.ontimeout = () => reject(new Error('XHR upload timeout'));
+          xhr.timeout = 300000; // 5 minute upload window for large files
+
+          xhr.open('POST', '/api/upload');
+          if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          xhr.send(formData);
+        });
       } catch (err) {
-        console.warn("Contribution asset upload fallback notice:", err);
+        console.warn("Contribution Express upload notice, using Firebase Storage fallback:", err);
       }
 
+      // Fallback Engine: Firebase Storage Resumable Stream (with 15s timeout safeguard against iframe CORS hangs)
       if (uploadedFiles.length === 0) {
-        uploadedFiles = await Promise.all(contributorFiles.map(async (file) => {
-          const fileRef = ref(storage, `clips/submissions/${Date.now()}_${file.name}`);
-          await uploadBytes(fileRef, file);
-          const downloadUrl = await getDownloadURL(fileRef);
-          return {
-            fileName: file.name,
-            fileType: file.type || 'application/octet-stream',
-            fileSize: file.size,
-            downloadUrl
-          };
-        }));
+        const bytesPerFile = new Array(contributorFiles.length).fill(0);
+        activeUploadTasksRef.current = [];
+
+        uploadedFiles = await Promise.all(
+          contributorFiles.map((file, index) => {
+            return new Promise<any>((resolve, reject) => {
+              const storageTimeout = setTimeout(() => {
+                reject(new Error("Storage upload timed out. Please refresh or try again."));
+              }, 15000);
+
+              const fileRef = ref(storage, `clips/${targetCode}/submissions/${Date.now()}_${file.name}`);
+              const uploadTask = uploadBytesResumable(fileRef, file);
+              activeUploadTasksRef.current.push(uploadTask);
+
+              uploadTask.on(
+                'state_changed',
+                (snapshot) => {
+                  bytesPerFile[index] = snapshot.bytesTransferred;
+                  const currentTransferred = bytesPerFile.reduce((a, b) => a + b, 0);
+                  const currentPercent = Math.min(99, Math.round((currentTransferred / (totalBytes || 1)) * 100));
+                  setTransferProgress(prev => prev ? {
+                    ...prev,
+                    bytesTransferred: currentTransferred,
+                    percent: currentPercent,
+                    status: 'uploading'
+                  } : null);
+                },
+                (err) => {
+                  clearTimeout(storageTimeout);
+                  reject(err);
+                },
+                async () => {
+                  clearTimeout(storageTimeout);
+                  try {
+                    const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                    resolve({
+                      fileName: file.name,
+                      fileType: file.type || 'application/octet-stream',
+                      fileSize: file.size,
+                      downloadUrl
+                    });
+                  } catch (e) {
+                    reject(e);
+                  }
+                }
+              );
+            });
+          })
+        );
       }
 
       const newSubmission = {
@@ -1858,15 +1961,18 @@ export default function App() {
         files: uploadedFiles
       };
 
-      // Find code from inputCode or active state
-      const targetCode = inputCode.trim() || retrievedClip?.code;
-      if (!targetCode) throw new Error('Missing collection code.');
-
       const docRef = doc(db, 'clips', targetCode);
       await updateDoc(docRef, {
         submissions: arrayUnion(newSubmission),
-        submissionCount: (retrievedClip.submissionCount || 0) + 1
+        submissionCount: (retrievedClip?.submissionCount || 0) + 1
       });
+
+      setTransferProgress(prev => prev ? {
+        ...prev,
+        bytesTransferred: totalBytes,
+        percent: 100,
+        status: 'ready'
+      } : null);
 
       setStatus({ type: 'success', message: 'Submission uploaded successfully!' });
       setContributorFiles([]);
@@ -1874,9 +1980,10 @@ export default function App() {
       
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        setRetrievedClip(docSnap.data());
+        setRetrievedClip({ id: docSnap.id, ...docSnap.data() });
       }
     } catch (e: any) {
+      setTransferProgress(prev => prev ? { ...prev, status: 'error' } : null);
       setStatus({ type: 'error', message: e?.message || 'Failed to submit.' });
     }
   };
@@ -2222,7 +2329,7 @@ export default function App() {
                           </motion.div>
                         )}
                         
-                        {(shareMode === 'file') && (
+                        {(shareMode === 'file' || shareMode === 'collection') && (
                           <motion.div
                             initial={{ opacity: 0, x: 10 }}
                             animate={{ opacity: 1, x: 0 }}
