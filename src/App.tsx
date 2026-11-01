@@ -62,7 +62,8 @@ import {
   where,
   collection,
   onSnapshot,
-  orderBy
+  orderBy,
+  arrayUnion
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
@@ -527,9 +528,11 @@ export default function App() {
   const [recentCodes, setRecentCodes] = useState<string[]>(JSON.parse(localStorage.getItem('recentCodes') || '[]'));
   const [customCodeInput, setCustomCodeInput] = useState<string>('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [shareMode, setShareMode] = useState<'text' | 'file'>('text');
+  const [shareMode, setShareMode] = useState<'text' | 'file' | 'collection'>('text');
   const [isDragging, setIsDragging] = useState(false);
   const [burnOnRead, setBurnOnRead] = useState(false);
+  const [contributorName, setContributorName] = useState<string>('');
+  const [contributorFiles, setContributorFiles] = useState<File[]>([]);
 
   const addIncomingFiles = (newFiles: File[]) => {
     if (!newFiles || newFiles.length === 0) return;
@@ -1253,14 +1256,18 @@ export default function App() {
       // Precise Expiration Time starts exactly from right now (after successful upload!)
       const expiresAt = new Date(getSyncedNow() + expirationSeconds * 1000);
 
+      const isCollectionMode = shareMode === 'collection';
       const clipData: any = {
-        content: savedText,
+        content: savedText || 'Pro Max Collection Drop Box',
         createdAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(expiresAt),
         authorUid: auth.currentUser?.uid || null,
         tier: tier,
         burnOnRead: burnOnRead,
-        viewCount: 0
+        viewCount: 0,
+        isCollection: isCollectionMode,
+        submissions: [],
+        submissionCount: 0
       };
 
       if (uploadedFiles.length > 0) {
@@ -1469,6 +1476,60 @@ export default function App() {
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.GET, path);
+    }
+  };
+
+  const handleSubmitContribution = async () => {
+    if (!contributorName.trim()) {
+      setStatus({ type: 'error', message: 'Please enter your name or student ID.' });
+      return;
+    }
+    if (contributorFiles.length === 0) {
+      setStatus({ type: 'error', message: 'Please select at least one file to submit.' });
+      return;
+    }
+
+    setStatus({ type: 'loading', message: 'Uploading your submission...' });
+
+    try {
+      const uploadedFiles = await Promise.all(contributorFiles.map(async (file) => {
+        const fileRef = ref(storage, `clips/submissions/${Date.now()}_${file.name}`);
+        await uploadBytes(fileRef, file);
+        const downloadUrl = await getDownloadURL(fileRef);
+        return {
+          fileName: file.name,
+          fileType: file.type || 'application/octet-stream',
+          fileSize: file.size,
+          downloadUrl
+        };
+      }));
+
+      const newSubmission = {
+        contributorName: contributorName.trim(),
+        submittedAt: new Date().toISOString(),
+        files: uploadedFiles
+      };
+
+      // Find code from inputCode or active state
+      const targetCode = inputCode.trim() || retrievedClip?.code;
+      if (!targetCode) throw new Error('Missing collection code.');
+
+      const docRef = doc(db, 'clips', targetCode);
+      await updateDoc(docRef, {
+        submissions: arrayUnion(newSubmission),
+        submissionCount: (retrievedClip.submissionCount || 0) + 1
+      });
+
+      setStatus({ type: 'success', message: 'Submission uploaded successfully!' });
+      setContributorFiles([]);
+      setContributorName('');
+      
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setRetrievedClip(docSnap.data());
+      }
+    } catch (e: any) {
+      setStatus({ type: 'error', message: e?.message || 'Failed to submit.' });
     }
   };
 
@@ -1745,10 +1806,52 @@ export default function App() {
                         >
                           File Clip
                         </button>
+                        <button 
+                          onClick={() => {
+                            if (!isProMax) {
+                              setShowProModal(true);
+                            } else {
+                              setShareMode('collection');
+                            }
+                          }}
+                          className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1 ${shareMode === 'collection' ? 'border-b-2 border-blue-600 text-blue-600 opacity-100' : 'opacity-60 hover:opacity-100 text-blue-600'}`}
+                        >
+                          <Zap className="w-3 h-3 fill-blue-600" />
+                          Collection Box {!isProMax && '🔒'}
+                        </button>
                       </div>
 
                     <div className="space-y-4">
                       <div className="relative">
+                        {(shareMode === 'collection') && (
+                          <motion.div
+                            initial={{ opacity: 0, x: 10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="py-2 space-y-4 text-left"
+                          >
+                            <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-sm space-y-2">
+                              <div className="flex items-center gap-2 text-blue-700 font-bold text-xs uppercase tracking-wider">
+                                <Zap className="w-4 h-4 fill-blue-600" />
+                                <span>Pro Max Collection Drop Box</span>
+                              </div>
+                              <p className="text-[11px] text-blue-900/80 leading-relaxed font-mono">
+                                Create a master code where 100+ students, clients, or teammates can upload files into your central inbox.
+                              </p>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 block mb-1">Collection Title / Instructions</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. MATH 101 Homework Submissions"
+                                value={manualText}
+                                onChange={(e) => setManualText(e.target.value)}
+                                className="w-full p-3 border border-[#141414] rounded-sm font-mono text-sm focus:outline-none bg-[#F9F9F8]"
+                              />
+                            </div>
+                          </motion.div>
+                        )}
+
                         {(shareMode === 'text') && (
                           <motion.div
                             initial={{ opacity: 0, x: -10 }}
@@ -2144,101 +2247,214 @@ export default function App() {
                     </div>
                     
                     <div className="p-4 sm:p-6 bg-white space-y-6">
-                      {/* Attached Files List */}
-                      {(retrievedClip.files && retrievedClip.files.length > 0) ? (
-                        <div className="space-y-3">
-                          <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-[#141414]/70">
-                            <span>Attached Files ({retrievedClip.files.length})</span>
-                            <span className="text-[10px] font-mono">
-                              {(retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0) / (1024 * 1024)).toFixed(2)} MB
-                            </span>
+                      {retrievedClip.isCollection ? (
+                        <div className="space-y-6 text-left">
+                          <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-sm space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold uppercase tracking-widest text-blue-700 font-mono">Pro Max Collection Box</span>
+                              <span className="text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm font-bold">
+                                {retrievedClip.submissions?.length || 0} Submissions
+                              </span>
+                            </div>
+                            <h3 className="text-sm font-bold text-[#141414]">{retrievedClip.content}</h3>
                           </div>
 
-                          <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
-                            {retrievedClip.files.map((file: any, idx: number) => (
-                              <div key={idx} className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-4 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[3px_3px_0px_0px_rgba(59,130,246,0.15)]">
-                                <div className="flex items-center gap-3 w-full sm:w-auto min-w-0 flex-1">
-                                  <div className="w-10 h-10 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
-                                    {file.fileType?.includes('video') ? (
-                                      <Video className="w-5 h-5 text-blue-600" />
-                                    ) : file.fileType?.includes('audio') ? (
-                                      <Music className="w-5 h-5 text-blue-600" />
-                                    ) : (
-                                      <FileText className="w-5 h-5 text-blue-600" />
-                                    )}
-                                  </div>
-                                  <div className="text-left min-w-0 flex-1">
-                                    <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block">
-                                      {file.fileName}
-                                    </div>
-                                    <div className="text-[9px] opacity-60 font-mono">
-                                      {(file.fileSize / (1024 * 1024)).toFixed(2)} MB • {file.fileType?.split('/').pop()?.toUpperCase()}
-                                    </div>
-                                  </div>
+                          {user && user.uid === retrievedClip.authorUid ? (
+                            /* OWNER DASHBOARD */
+                            <div className="space-y-4">
+                              <div className="text-xs font-bold uppercase tracking-widest opacity-70">Incoming Submissions ({retrievedClip.submissions?.length || 0})</div>
+                              {(!retrievedClip.submissions || retrievedClip.submissions.length === 0) ? (
+                                <div className="p-6 text-center border border-dashed border-[#141414]/20 rounded-sm opacity-60 text-xs font-mono">
+                                  No submissions yet. Share your collection code with students or teammates!
                                 </div>
-                                <a 
-                                  href={file.downloadUrl}
-                                  download={file.fileName}
-                                  onClick={(e) => {
-                                    if (isApiBlocked) {
-                                      e.preventDefault();
-                                      setStatus({ 
-                                        type: 'error', 
-                                        message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
-                                      });
-                                    } else {
-                                      setStatus({ type: 'success', message: `Downloading ${file.fileName}...` });
-                                    }
-                                  }}
-                                  className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 font-bold uppercase tracking-widest text-[9px] shadow-[2px_2px_0px_0px_rgba(30,58,138,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none shrink-0"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  Download
-                                </a>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : retrievedClip.hasFile && (
-                        <div className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-5 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 shadow-[4px_4px_0px_0px_rgba(59,130,246,0.2)]">
-                          <div className="flex items-center gap-4 w-full sm:w-auto min-w-0 flex-1">
-                            <div className="w-14 h-14 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
-                              {retrievedClip.fileType?.includes('video') ? (
-                                <Video className="w-7 h-7 text-blue-600" />
-                              ) : retrievedClip.fileType?.includes('audio') ? (
-                                <Music className="w-7 h-7 text-blue-600" />
                               ) : (
-                                <FileText className="w-7 h-7 text-blue-600" />
+                                <div className="space-y-3 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
+                                  {retrievedClip.submissions.map((sub: any, sIdx: number) => (
+                                    <div key={sIdx} className="bg-white border-2 border-[#141414] p-4 rounded-sm shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-2">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-xs font-bold font-mono text-blue-700">{sub.contributorName}</span>
+                                        <span className="text-[9px] opacity-50 font-mono">{new Date(sub.submittedAt).toLocaleTimeString()}</span>
+                                      </div>
+                                      <div className="space-y-2 pt-1">
+                                        {sub.files.map((file: any, fIdx: number) => (
+                                          <div key={fIdx} className="flex items-center justify-between bg-blue-50/60 p-2.5 rounded-sm border border-blue-200">
+                                            <span className="text-xs font-bold truncate pr-2">{file.fileName}</span>
+                                            <a 
+                                              href={file.downloadUrl}
+                                              download={file.fileName}
+                                              className="bg-blue-600 text-white px-3 py-1 rounded-sm text-[9px] font-bold uppercase tracking-wider shrink-0 hover:bg-blue-700"
+                                            >
+                                              Download
+                                            </a>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               )}
                             </div>
-                            <div className="text-left min-w-0 flex-1">
-                              <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block mb-1">
-                                {retrievedClip.fileName}
+                          ) : (
+                            /* CONTRIBUTOR UPLOAD FORM */
+                            <div className="space-y-4 bg-[#F9F9F8] border-2 border-[#141414] p-5 rounded-sm shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                              <div className="space-y-1">
+                                <label className="text-[10px] uppercase tracking-widest font-bold opacity-70">Your Name / Student ID *</label>
+                                <input 
+                                  type="text"
+                                  placeholder="e.g. John Doe (ID: 45892)"
+                                  value={contributorName}
+                                  onChange={(e) => setContributorName(e.target.value)}
+                                  className="w-full p-3 border border-[#141414] rounded-sm font-mono text-xs focus:outline-none bg-white"
+                                />
                               </div>
-                              <div className="text-[10px] opacity-60 font-mono bg-blue-100/50 inline-block px-2 py-0.5 rounded-sm">
-                                {(retrievedClip.fileSize / (1024 * 1024)).toFixed(2)} MB • {retrievedClip.fileType?.split('/').pop()?.toUpperCase()}
+
+                              <div className="space-y-2">
+                                <label className="text-[10px] uppercase tracking-widest font-bold opacity-70">Attach Files for Submission</label>
+                                <input 
+                                  type="file" 
+                                  id="contrib-files" 
+                                  multiple
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files) {
+                                      setContributorFiles(Array.from(e.target.files));
+                                    }
+                                  }}
+                                />
+                                <label 
+                                  htmlFor="contrib-files"
+                                  className="border-2 border-dashed border-[#141414]/30 hover:border-[#141414] bg-white p-6 rounded-sm text-center cursor-pointer block transition-all"
+                                >
+                                  <div className="flex flex-col items-center gap-2">
+                                    <Share2 className="w-6 h-6 opacity-40" />
+                                    <span className="text-xs font-bold uppercase tracking-wider">Click to browse or drop files</span>
+                                    <span className="text-[9px] opacity-40 font-mono">Assignments, reports, media</span>
+                                  </div>
+                                </label>
+
+                                {contributorFiles.length > 0 && (
+                                  <div className="space-y-1.5 pt-2">
+                                    {contributorFiles.map((f, i) => (
+                                      <div key={i} className="flex items-center justify-between bg-white p-2 border border-[#141414]/20 rounded-sm text-xs font-mono">
+                                        <span className="truncate pr-2">{f.name}</span>
+                                        <span className="opacity-50 text-[10px]">{(f.size / 1024).toFixed(1)} KB</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              <button 
+                                onClick={handleSubmitContribution}
+                                disabled={status.type === 'loading'}
+                                className="w-full bg-[#141414] text-[#E4E3E0] py-3.5 rounded-sm font-bold uppercase tracking-widest text-xs hover:bg-[#141414]/90 transition-all flex items-center justify-center gap-2"
+                              >
+                                {status.type === 'loading' ? <RefreshCw className="animate-spin w-4 h-4" /> : <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                                Submit to Collection
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {retrievedClip.files && retrievedClip.files.length > 0 && (
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-[#141414]/70">
+                                <span>Attached Files ({retrievedClip.files.length})</span>
+                                <span className="text-[10px] font-mono">
+                                  {(retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0) / (1024 * 1024)).toFixed(2)} MB
+                                </span>
+                              </div>
+
+                              <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                                {retrievedClip.files.map((file: any, idx: number) => (
+                                  <div key={idx} className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-4 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[3px_3px_0px_0px_rgba(59,130,246,0.15)]">
+                                    <div className="flex items-center gap-3 w-full sm:w-auto min-w-0 flex-1">
+                                      <div className="w-10 h-10 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
+                                        {file.fileType?.includes('video') ? (
+                                          <Video className="w-5 h-5 text-blue-600" />
+                                        ) : file.fileType?.includes('audio') ? (
+                                          <Music className="w-5 h-5 text-blue-600" />
+                                        ) : (
+                                          <FileText className="w-5 h-5 text-blue-600" />
+                                        )}
+                                      </div>
+                                      <div className="text-left min-w-0 flex-1">
+                                        <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block">
+                                          {file.fileName}
+                                        </div>
+                                        <div className="text-[9px] opacity-60 font-mono">
+                                          {(file.fileSize / (1024 * 1024)).toFixed(2)} MB • {file.fileType?.split('/').pop()?.toUpperCase()}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <a 
+                                      href={file.downloadUrl}
+                                      download={file.fileName}
+                                      onClick={(e) => {
+                                        if (isApiBlocked) {
+                                          e.preventDefault();
+                                          setStatus({ 
+                                            type: 'error', 
+                                            message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
+                                          });
+                                        } else {
+                                          setStatus({ type: 'success', message: `Downloading ${file.fileName}...` });
+                                        }
+                                      }}
+                                      className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 font-bold uppercase tracking-widest text-[9px] shadow-[2px_2px_0px_0px_rgba(30,58,138,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none shrink-0"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                      Download
+                                    </a>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          </div>
-                          <a 
-                            href={retrievedClip.downloadUrl}
-                            download={retrievedClip.fileName}
-                            onClick={(e) => {
-                              if (isApiBlocked) {
-                                e.preventDefault();
-                                setStatus({ 
-                                  type: 'error', 
-                                  message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
-                                });
-                              } else {
-                                setStatus({ type: 'success', message: `Downloading ${retrievedClip.fileName}...` });
-                              }
-                            }}
-                            className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-[10px] shadow-[4px_4px_0px_0px_rgba(30,58,138,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none shrink-0"
-                          >
-                            <Download className="w-4 h-4" />
-                            Download Now
-                          </a>
+                          )}
+
+                          {(!retrievedClip.files || retrievedClip.files.length === 0) && retrievedClip.hasFile && (
+                            <div className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-5 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 shadow-[4px_4px_0px_0px_rgba(59,130,246,0.2)]">
+                              <div className="flex items-center gap-4 w-full sm:w-auto min-w-0 flex-1">
+                                <div className="w-14 h-14 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
+                                  {retrievedClip.fileType?.includes('video') ? (
+                                    <Video className="w-7 h-7 text-blue-600" />
+                                  ) : retrievedClip.fileType?.includes('audio') ? (
+                                    <Music className="w-7 h-7 text-blue-600" />
+                                  ) : (
+                                    <FileText className="w-7 h-7 text-blue-600" />
+                                  )}
+                                </div>
+                                <div className="text-left min-w-0 flex-1">
+                                  <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block mb-1">
+                                    {retrievedClip.fileName}
+                                  </div>
+                                  <div className="text-[10px] opacity-60 font-mono bg-blue-100/50 inline-block px-2 py-0.5 rounded-sm">
+                                    {(retrievedClip.fileSize / (1024 * 1024)).toFixed(2)} MB • {retrievedClip.fileType?.split('/').pop()?.toUpperCase()}
+                                  </div>
+                                </div>
+                              </div>
+                              <a 
+                                href={retrievedClip.downloadUrl}
+                                download={retrievedClip.fileName}
+                                onClick={(e) => {
+                                  if (isApiBlocked) {
+                                    e.preventDefault();
+                                    setStatus({ 
+                                      type: 'error', 
+                                      message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
+                                    });
+                                  } else {
+                                    setStatus({ type: 'success', message: `Downloading ${retrievedClip.fileName}...` });
+                                  }
+                                }}
+                                className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-[10px] shadow-[4px_4px_0px_0px_rgba(30,58,138,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none shrink-0"
+                              >
+                                <Download className="w-4 h-4" />
+                                Download Now
+                              </a>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -2497,8 +2713,8 @@ export default function App() {
                     <ul className="space-y-2">
                       {[
                         "3-4 Character Short Codes",
+                        "Collection Drop Box (Team Inbox)",
                         "Locked Vault (7-Day Recovery)",
-                        "Everything in Pro",
                         "Pro Max Insurance",
                         "Unlimited File Sharing (Max 1GB)"
                       ].map((f, i) => (

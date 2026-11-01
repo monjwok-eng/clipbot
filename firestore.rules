@@ -74,6 +74,9 @@ service cloud.firestore {
                       isValidClip(request.resource.data);
       allow get: if true;
       allow update: if (isDocOwner() && isValidClip(request.resource.data)) ||
+                      (resource.data.get('isCollection', false) == true &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['submissions', 'submissionCount']) &&
+                       request.resource.data.submissions is list) ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['expiresAt']) && 
                        request.resource.data.expiresAt == request.time) ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']) &&
