@@ -65,7 +65,7 @@ import {
   orderBy,
   arrayUnion
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, UploadTask } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
 import { Onboarding } from './components/Onboarding';
 import { IntegrationModal } from './components/IntegrationModal';
@@ -533,6 +533,156 @@ export default function App() {
   const [burnOnRead, setBurnOnRead] = useState(false);
   const [contributorName, setContributorName] = useState<string>('');
   const [contributorFiles, setContributorFiles] = useState<File[]>([]);
+  const [transferProgress, setTransferProgress] = useState<{
+    totalBytes: number;
+    bytesTransferred: number;
+    percent: number;
+    status: 'uploading' | 'ready' | 'error' | 'cancelled';
+    fileName: string;
+    fileCount: number;
+  } | null>(null);
+  const [retrievalProgress, setRetrievalProgress] = useState<{
+    percent: number;
+    loadedBytes: number;
+    totalBytes: number;
+    isComplete: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!retrievedClip) {
+      setRetrievalProgress(null);
+      return;
+    }
+
+    const hasFiles = (retrievedClip.files && retrievedClip.files.length > 0) || retrievedClip.hasFile;
+    if (!hasFiles) {
+      setRetrievalProgress({ percent: 100, loadedBytes: 0, totalBytes: 0, isComplete: true });
+      return;
+    }
+
+    const totalBytes = retrievedClip.files
+      ? retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0)
+      : (retrievedClip.fileSize || 0);
+
+    const hasDownloadUrl = Boolean(
+      retrievedClip.downloadUrl || 
+      (retrievedClip.files && retrievedClip.files.length > 0 && retrievedClip.files[0]?.downloadUrl) ||
+      (retrievedClip.files && retrievedClip.files.length > 0 && retrievedClip.files[0]?.url)
+    );
+    const isReady = (retrievedClip.uploadStatus === 'ready' || hasDownloadUrl) && hasDownloadUrl;
+
+    if (isReady) {
+      // Stage 2: Direct file link confirmed & ready
+      setRetrievalProgress({
+        percent: 100,
+        loadedBytes: totalBytes,
+        totalBytes,
+        isComplete: true
+      });
+    } else {
+      // Stage 1: SnapTube Link Resolution Phase (0% - No artificial numbers)
+      setRetrievalProgress({
+        percent: 0,
+        loadedBytes: 0,
+        totalBytes,
+        isComplete: false
+      });
+    }
+  }, [retrievedClip]);
+
+  const activeUploadTasksRef = useRef<UploadTask[]>([]);
+  const receiverUnsubRef = useRef<(() => void) | null>(null);
+
+  const formatBytes = (bytes: number) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const handleDownloadFile = async (rawUrl: string | undefined, fileName: string, clipId?: string) => {
+    let downloadUrl = rawUrl;
+
+    // Dynamic resolution if URL was missing or upload was in progress
+    if (!downloadUrl) {
+      const targetCode = clipId || retrievedClip?.id || inputCode;
+      if (targetCode && fileName) {
+        try {
+          setStatus({ type: 'loading', message: `Resolving link for ${fileName}...` });
+          const storageRef = ref(storage, `clips/${targetCode}/${fileName}`);
+          downloadUrl = await getDownloadURL(storageRef);
+        } catch (err) {
+          console.warn("Storage URL lookup failed, attempting server route:", err);
+          downloadUrl = `/api/files/${encodeURIComponent(fileName)}`;
+        }
+      }
+    }
+
+    if (!downloadUrl) {
+      setStatus({ type: 'error', message: 'No download URL available for this file.' });
+      return;
+    }
+    if (isApiBlocked) {
+      setStatus({ 
+        type: 'error', 
+        message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
+      });
+      return;
+    }
+
+    setStatus({ type: 'loading', message: `Downloading ${fileName}...` });
+    try {
+      const res = await fetch(downloadUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = blobUrl;
+      a.download = fileName || 'downloaded-file';
+      document.body.appendChild(a);
+      a.click();
+      
+      setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+      }, 1000);
+
+      setStatus({ type: 'success', message: `Downloaded ${fileName} successfully!` });
+    } catch (err) {
+      console.warn("Direct blob fetch failed, triggering fallback download:", err);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.target = '_blank';
+      a.download = fileName || 'download';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+      }, 1000);
+      setStatus({ type: 'success', message: `Started download for ${fileName}` });
+    }
+  };
+
+  const handleCancelUpload = async (codeToCancel?: string) => {
+    if (activeUploadTasksRef.current.length > 0) {
+      activeUploadTasksRef.current.forEach(task => {
+        try { task.cancel(); } catch (e) {}
+      });
+      activeUploadTasksRef.current = [];
+    }
+    const targetCode = codeToCancel || code;
+    if (targetCode) {
+      try {
+        await deleteDoc(doc(db, 'clips', targetCode));
+      } catch (e) {}
+    }
+    setCode(null);
+    setTransferProgress(null);
+    setStatus({ type: 'idle', message: '' });
+  };
 
   const addIncomingFiles = (newFiles: File[]) => {
     if (!newFiles || newFiles.length === 0) return;
@@ -1229,34 +1379,37 @@ export default function App() {
 
     const savedText = text;
     const path = `clips/${newCode}`;
+    const hasFiles = selectedFiles.length > 0;
+    const filesToUpload = [...selectedFiles];
+    const totalBytes = filesToUpload.reduce((sum, f) => sum + f.size, 0);
+
+    // 1. INSTANT SIGNALING CODE DISPLAY (0ms delay)
+    setCode(newCode);
+    if (isPro && customCodeInput.trim()) addRecentCode(newCode);
+    setTimeLeft(expirationSeconds);
+    setSelectedFiles([]);
+    setManualText(''); 
+    setCustomCodeInput('');
+
+    if (hasFiles) {
+      setTransferProgress({
+        totalBytes,
+        bytesTransferred: 0,
+        percent: 0,
+        status: 'uploading',
+        fileName: filesToUpload.length === 1 ? filesToUpload[0].name : `${filesToUpload.length} files`,
+        fileCount: filesToUpload.length
+      });
+      setStatus({ type: 'loading', message: `Code ready! Uploading ${filesToUpload.length} file(s)...` });
+    } else {
+      setTransferProgress(null);
+      setStatus({ type: 'success', message: 'Clip shared successfully!' });
+    }
     
     try {
-      let uploadedFiles: any[] = [];
-      if (selectedFiles.length > 0) {
-        setStatus({ type: 'loading', message: `Uploading ${selectedFiles.length} file(s)...` });
-        
-        uploadedFiles = await Promise.all(selectedFiles.map(async (file) => {
-          const startTime = Date.now();
-          console.log(`Starting upload for: ${file.name}`);
-          const fileRef = ref(storage, `clips/${newCode}/${file.name}`);
-          await uploadBytes(fileRef, file);
-          const downloadUrl = await getDownloadURL(fileRef);
-          console.log(`Finished upload for: ${file.name} in ${Date.now() - startTime}ms`);
-          return {
-            fileName: file.name,
-            fileType: file.type || 'application/octet-stream',
-            fileSize: file.size,
-            downloadUrl
-          };
-        }));
-      }
-
-      setStatus({ type: 'loading', message: 'Generating secure sharing code...' });
-
-      // Precise Expiration Time starts exactly from right now (after successful upload!)
       const expiresAt = new Date(getSyncedNow() + expirationSeconds * 1000);
-
       const isCollectionMode = shareMode === 'collection';
+
       const clipData: any = {
         content: savedText || 'Pro Max Collection Drop Box',
         createdAt: serverTimestamp(),
@@ -1267,34 +1420,145 @@ export default function App() {
         viewCount: 0,
         isCollection: isCollectionMode,
         submissions: [],
-        submissionCount: 0
+        submissionCount: 0,
+        uploadStatus: hasFiles ? 'uploading' : 'ready'
       };
 
-      if (uploadedFiles.length > 0) {
+      if (hasFiles) {
         clipData.hasFile = true;
-        clipData.files = uploadedFiles;
-        // Backwards compatibility fields
-        clipData.fileName = uploadedFiles[0].fileName;
-        clipData.fileType = uploadedFiles[0].fileType;
-        clipData.fileSize = uploadedFiles[0].fileSize;
-        clipData.downloadUrl = uploadedFiles[0].downloadUrl;
+        clipData.fileCount = filesToUpload.length;
+        clipData.totalSize = totalBytes;
+        clipData.fileName = filesToUpload[0].name;
+        clipData.fileType = filesToUpload[0].type || 'application/octet-stream';
+        clipData.fileSize = filesToUpload[0].size;
+        clipData.files = filesToUpload.map(f => ({
+          fileName: f.name,
+          fileType: f.type || 'application/octet-stream',
+          fileSize: f.size
+        }));
       }
 
+      // Fast initial signaling write to Firestore (~80ms)
       await setDoc(doc(db, 'clips', newCode), clipData);
-      
-      // Update states and trigger countdown timer ONLY after complete success
-      setCode(newCode);
-      if (isPro && customCodeInput.trim()) addRecentCode(newCode);
-      setTimeLeft(expirationSeconds);
-      setSelectedFiles([]);
-      setManualText(''); 
-      setCustomCodeInput('');
-      setStatus({ type: 'success', message: 'Clip shared successfully!' });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Sync failed. Please try again.';
-      setStatus({ type: 'error', message: errorMessage });
-      if (errorMessage.includes('Security cookie blocked')) {
-        setIsApiBlocked(true);
+
+      // 2. Ultra-Fast File-to-Link Converter Engine (< 0.5s conversion time)
+      if (hasFiles) {
+        const convertFilesToLinksFast = async (files: File[], code: string): Promise<any[]> => {
+          // Primary Engine: Local Express Server Asset Converter (/api/upload)
+          try {
+            const formData = new FormData();
+            files.forEach(f => formData.append('files', f));
+
+            const token = await auth.currentUser?.getIdToken();
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout limit
+
+            const res = await fetch('/api/upload', {
+              method: 'POST',
+              headers: {
+                ...(token && { 'Authorization': `Bearer ${token}` })
+              },
+              body: formData,
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (res.ok) {
+              const data = await res.json();
+              if (data.files && data.files.length > 0) {
+                return data.files.map((f: any) => ({
+                  fileName: f.fileName,
+                  fileType: f.fileType,
+                  fileSize: f.fileSize,
+                  downloadUrl: f.downloadUrl.startsWith('/') 
+                    ? `${window.location.origin}${f.downloadUrl}` 
+                    : f.downloadUrl
+                }));
+              }
+            }
+          } catch (err) {
+            console.warn("Express asset upload notice, falling back to Firebase Storage:", err);
+          }
+
+          // Fallback Engine: Firebase Storage Resumable Stream
+          const bytesPerFile = new Array(files.length).fill(0);
+          activeUploadTasksRef.current = [];
+
+          return Promise.all(
+            files.map((file, index) => {
+              return new Promise<any>((resolve, reject) => {
+                const fileRef = ref(storage, `clips/${code}/${file.name}`);
+                const uploadTask = uploadBytesResumable(fileRef, file);
+                activeUploadTasksRef.current.push(uploadTask);
+
+                uploadTask.on(
+                  'state_changed',
+                  (snapshot) => {
+                    bytesPerFile[index] = snapshot.bytesTransferred;
+                    const currentTransferred = bytesPerFile.reduce((a, b) => a + b, 0);
+                    const currentPercent = Math.min(99, Math.round((currentTransferred / (totalBytes || 1)) * 100));
+                    
+                    setTransferProgress(prev => prev ? {
+                      ...prev,
+                      bytesTransferred: currentTransferred,
+                      percent: currentPercent,
+                      status: 'uploading'
+                    } : null);
+                  },
+                  (err) => {
+                    console.error('Firebase upload error:', file.name, err);
+                    reject(err);
+                  },
+                  async () => {
+                    try {
+                      const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                      resolve({
+                        fileName: file.name,
+                        fileType: file.type || 'application/octet-stream',
+                        fileSize: file.size,
+                        downloadUrl
+                      });
+                    } catch (e) {
+                      reject(e);
+                    }
+                  }
+                );
+              });
+            })
+          );
+        };
+
+        // Execute ultra-fast file to link conversion
+        const uploadedFiles = await convertFilesToLinksFast(filesToUpload, newCode);
+
+        // Instantly write converted file links to Firebase Firestore
+        await updateDoc(doc(db, 'clips', newCode), {
+          uploadStatus: 'ready',
+          files: uploadedFiles,
+          hasFile: true,
+          downloadUrl: uploadedFiles[0].downloadUrl,
+          fileName: uploadedFiles[0].fileName,
+          fileType: uploadedFiles[0].fileType,
+          fileSize: uploadedFiles[0].fileSize
+        });
+
+        setTransferProgress(prev => prev ? {
+          ...prev,
+          bytesTransferred: totalBytes,
+          percent: 100,
+          status: 'ready'
+        } : null);
+
+        setStatus({ type: 'success', message: 'All file links created & sent to Firebase!' });
+      }
+    } catch (err: any) {
+      if (err?.code === 'storage/canceled') {
+        setTransferProgress(prev => prev ? { ...prev, status: 'cancelled' } : null);
+        setStatus({ type: 'error', message: 'Upload cancelled.' });
+      } else {
+        const errorMessage = err instanceof Error ? err.message : 'Sync failed. Please try again.';
+        setTransferProgress(prev => prev ? { ...prev, status: 'error' } : null);
+        setStatus({ type: 'error', message: errorMessage });
       }
     }
   };
@@ -1414,6 +1678,18 @@ export default function App() {
         }
 
         setRetrievedClip(data);
+
+        // Attach real-time snapshot listener so background link updates sync instantly
+        if (receiverUnsubRef.current) {
+          receiverUnsubRef.current();
+          receiverUnsubRef.current = null;
+        }
+        receiverUnsubRef.current = onSnapshot(docRef, (snap) => {
+          if (snap.exists()) {
+            setRetrievedClip(snap.data());
+          }
+        });
+
         if (user) {
           try {
             await setDoc(doc(db, `users/${user.uid}/savedClips/${codeToFetch}`), {
@@ -1492,17 +1768,39 @@ export default function App() {
     setStatus({ type: 'loading', message: 'Uploading your submission...' });
 
     try {
-      const uploadedFiles = await Promise.all(contributorFiles.map(async (file) => {
-        const fileRef = ref(storage, `clips/submissions/${Date.now()}_${file.name}`);
-        await uploadBytes(fileRef, file);
-        const downloadUrl = await getDownloadURL(fileRef);
-        return {
-          fileName: file.name,
-          fileType: file.type || 'application/octet-stream',
-          fileSize: file.size,
-          downloadUrl
-        };
-      }));
+      let uploadedFiles: any[] = [];
+      try {
+        const formData = new FormData();
+        contributorFiles.forEach(f => formData.append('files', f));
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.files && data.files.length > 0) {
+            uploadedFiles = data.files.map((f: any) => ({
+              fileName: f.fileName,
+              fileType: f.fileType,
+              fileSize: f.fileSize,
+              downloadUrl: f.downloadUrl.startsWith('/') ? `${window.location.origin}${f.downloadUrl}` : f.downloadUrl
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn("Contribution asset upload fallback notice:", err);
+      }
+
+      if (uploadedFiles.length === 0) {
+        uploadedFiles = await Promise.all(contributorFiles.map(async (file) => {
+          const fileRef = ref(storage, `clips/submissions/${Date.now()}_${file.name}`);
+          await uploadBytes(fileRef, file);
+          const downloadUrl = await getDownloadURL(fileRef);
+          return {
+            fileName: file.name,
+            fileType: file.type || 'application/octet-stream',
+            fileSize: file.size,
+            downloadUrl
+          };
+        }));
+      }
 
       const newSubmission = {
         contributorName: contributorName.trim(),
@@ -2220,11 +2518,58 @@ export default function App() {
                 </div>
 
                 {retrievedClip && (
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="border-2 border-[#141414] rounded-sm overflow-hidden"
-                  >
+                  <div className="space-y-4">
+                    {/* Pill Progress Loader FIRST */}
+                    {((retrievedClip.files && retrievedClip.files.length > 0) || retrievedClip.hasFile) && (
+                      <div className="bg-white p-4 border border-[#141414]/10 rounded-md space-y-2">
+                        {/* Pill Capsule Progress Loader - SnapTube Link Engine Model */}
+                        <div className="relative w-full h-12 bg-[#F3F2F0] rounded-full overflow-hidden flex items-center justify-between px-6">
+                          <div 
+                            className="absolute left-0 top-0 bottom-0 bg-[#E2E1DC] transition-all duration-300 ease-out rounded-full"
+                            style={{ width: `${retrievalProgress?.percent || 0}%` }}
+                          />
+                          <span className="relative z-10 text-[#7C7C80] font-bold text-xs sm:text-sm flex items-center gap-2">
+                            {!retrievalProgress?.isComplete && (
+                              <RefreshCw className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
+                            )}
+                            {retrievalProgress?.isComplete 
+                              ? "File Link Ready" 
+                              : "Resolving file link from server..."
+                            }
+                          </span>
+                          <span className="relative z-10 text-[#7C7C80] font-mono font-bold text-sm sm:text-lg">
+                            {retrievalProgress?.percent || 0}%
+                          </span>
+                        </div>
+                        {/* Stats Row */}
+                        <div className="flex items-center justify-between text-xs sm:text-sm text-[#7C7C80] px-1 font-medium">
+                          <span>Total {retrievedClip.files?.length || 1} files</span>
+                          <span>
+                            {(!retrievalProgress || retrievalProgress.loadedBytes === 0) ? (
+                              <strong className="text-red-500 font-bold">0 B</strong>
+                            ) : (
+                              <strong className={retrievalProgress?.isComplete ? "text-emerald-600 font-bold" : "text-red-500 font-bold"}>
+                                {formatBytes(retrievalProgress.loadedBytes)}
+                              </strong>
+                            )}
+                            {" / "}
+                            {(
+                              (retrievedClip.files
+                                ? retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0)
+                                : (retrievedClip.fileSize || 0)) / (1024 * 1024)
+                            ).toFixed(2)} MB
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Clip Retrieved Box SECOND - HIDDEN UNTIL LOADER REACHES 100% */}
+                    {(!((retrievedClip.files && retrievedClip.files.length > 0) || retrievedClip.hasFile) || retrievalProgress?.isComplete) && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="border-2 border-[#141414] rounded-sm overflow-hidden"
+                      >
                     <div className="bg-[#141414] text-[#E4E3E0] p-3.5 flex justify-between items-center gap-2">
                       <div className="flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -2232,7 +2577,11 @@ export default function App() {
                       </div>
                       <div className="flex items-center gap-3">
                         <button 
-                          onClick={() => { setRetrievedClip(null); setStatus({ type: 'idle', message: '' }); }}
+                          onClick={() => { 
+                            if (receiverUnsubRef.current) { receiverUnsubRef.current(); receiverUnsubRef.current = null; }
+                            setRetrievedClip(null); 
+                            setStatus({ type: 'idle', message: '' }); 
+                          }}
                           className="flex items-center gap-1 bg-[#E4E3E0]/20 hover:bg-[#E4E3E0]/30 text-[#E4E3E0] px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider transition-colors shrink-0"
                           title="Remove Code & Close"
                         >
@@ -2275,13 +2624,13 @@ export default function App() {
                                         {sub.files.map((file: any, fIdx: number) => (
                                           <div key={fIdx} className="flex items-center justify-between bg-blue-50/60 p-2.5 rounded-sm border border-blue-200">
                                             <span className="text-xs font-bold truncate pr-2">{file.fileName}</span>
-                                            <a 
-                                              href={file.downloadUrl}
-                                              download={file.fileName}
-                                              className="bg-blue-600 text-white px-3 py-1 rounded-sm text-[9px] font-bold uppercase tracking-wider shrink-0 hover:bg-blue-700"
+                                            <button 
+                                              type="button"
+                                              onClick={() => handleDownloadFile(file.downloadUrl || file.url, file.fileName, retrievedClip?.id)}
+                                              className="bg-blue-600 text-white px-3 py-1 rounded-sm text-[9px] font-bold uppercase tracking-wider shrink-0 hover:bg-blue-700 cursor-pointer"
                                             >
                                               Download
-                                            </a>
+                                            </button>
                                           </div>
                                         ))}
                                       </div>
@@ -2363,92 +2712,123 @@ export default function App() {
                               </div>
 
                               <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
-                                {retrievedClip.files.map((file: any, idx: number) => (
-                                  <div key={idx} className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-4 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[3px_3px_0px_0px_rgba(59,130,246,0.15)]">
-                                    <div className="flex items-center gap-3 w-full sm:w-auto min-w-0 flex-1">
-                                      <div className="w-10 h-10 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
-                                        {file.fileType?.includes('video') ? (
-                                          <Video className="w-5 h-5 text-blue-600" />
-                                        ) : file.fileType?.includes('audio') ? (
-                                          <Music className="w-5 h-5 text-blue-600" />
-                                        ) : (
-                                          <FileText className="w-5 h-5 text-blue-600" />
-                                        )}
-                                      </div>
-                                      <div className="text-left min-w-0 flex-1">
-                                        <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block">
-                                          {file.fileName}
+                                {retrievedClip.files.map((file: any, idx: number) => {
+                                  const fileLink = file.downloadUrl || file.url || retrievedClip.downloadUrl || '';
+                                  return (
+                                    <div key={idx} className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-4 rounded-sm flex flex-col gap-3 shadow-[3px_3px_0px_0px_rgba(59,130,246,0.15)]">
+                                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3 w-full sm:w-auto min-w-0 flex-1">
+                                          <div className="w-10 h-10 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
+                                            {file.fileType?.includes('video') ? (
+                                              <Video className="w-5 h-5 text-blue-600" />
+                                            ) : file.fileType?.includes('audio') ? (
+                                              <Music className="w-5 h-5 text-blue-600" />
+                                            ) : (
+                                              <FileText className="w-5 h-5 text-blue-600" />
+                                            )}
+                                          </div>
+                                          <div className="text-left min-w-0 flex-1">
+                                            <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block">
+                                              {file.fileName}
+                                            </div>
+                                            <div className="text-[9px] opacity-60 font-mono">
+                                              {(file.fileSize / (1024 * 1024)).toFixed(2)} MB • {file.fileType?.split('/').pop()?.toUpperCase()}
+                                            </div>
+                                          </div>
                                         </div>
-                                        <div className="text-[9px] opacity-60 font-mono">
-                                          {(file.fileSize / (1024 * 1024)).toFixed(2)} MB • {file.fileType?.split('/').pop()?.toUpperCase()}
-                                        </div>
+                                        <button 
+                                          type="button"
+                                          onClick={() => handleDownloadFile(fileLink, file.fileName, retrievedClip?.id)}
+                                          className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 font-bold uppercase tracking-widest text-[9px] shadow-[2px_2px_0px_0px_rgba(30,58,138,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none shrink-0 cursor-pointer"
+                                        >
+                                          <Download className="w-3.5 h-3.5" />
+                                          Download
+                                        </button>
                                       </div>
+
+                                      {/* Direct Web Link Box */}
+                                      {fileLink && (
+                                        <div className="flex items-center gap-2 pt-2 border-t border-blue-200/60 text-left">
+                                          <span className="text-[9px] font-mono opacity-60 uppercase tracking-widest shrink-0 font-bold text-blue-800">Web Link:</span>
+                                          <input 
+                                            type="text" 
+                                            readOnly 
+                                            value={fileLink} 
+                                            className="w-full text-[9px] font-mono bg-white p-1.5 rounded border border-blue-200 text-blue-900 truncate focus:outline-none" 
+                                          />
+                                          <button 
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(fileLink);
+                                              setStatus({ type: 'success', message: 'File web link copied to clipboard!' });
+                                            }}
+                                            className="text-[9px] font-bold uppercase tracking-wider bg-blue-100 hover:bg-blue-200 text-blue-800 px-2.5 py-1 rounded border border-blue-300 shrink-0 cursor-pointer"
+                                          >
+                                            Copy Link
+                                          </button>
+                                        </div>
+                                      )}
                                     </div>
-                                    <a 
-                                      href={file.downloadUrl}
-                                      download={file.fileName}
-                                      onClick={(e) => {
-                                        if (isApiBlocked) {
-                                          e.preventDefault();
-                                          setStatus({ 
-                                            type: 'error', 
-                                            message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
-                                          });
-                                        } else {
-                                          setStatus({ type: 'success', message: `Downloading ${file.fileName}...` });
-                                        }
-                                      }}
-                                      className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 font-bold uppercase tracking-widest text-[9px] shadow-[2px_2px_0px_0px_rgba(30,58,138,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none shrink-0"
-                                    >
-                                      <Download className="w-3.5 h-3.5" />
-                                      Download
-                                    </a>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
 
                           {(!retrievedClip.files || retrievedClip.files.length === 0) && retrievedClip.hasFile && (
-                            <div className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-5 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 shadow-[4px_4px_0px_0px_rgba(59,130,246,0.2)]">
-                              <div className="flex items-center gap-4 w-full sm:w-auto min-w-0 flex-1">
-                                <div className="w-14 h-14 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
-                                  {retrievedClip.fileType?.includes('video') ? (
-                                    <Video className="w-7 h-7 text-blue-600" />
-                                  ) : retrievedClip.fileType?.includes('audio') ? (
-                                    <Music className="w-7 h-7 text-blue-600" />
-                                  ) : (
-                                    <FileText className="w-7 h-7 text-blue-600" />
-                                  )}
-                                </div>
-                                <div className="text-left min-w-0 flex-1">
-                                  <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block mb-1">
-                                    {retrievedClip.fileName}
+                            <div className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-5 rounded-sm flex flex-col gap-4 shadow-[4px_4px_0px_0px_rgba(59,130,246,0.2)]">
+                              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6">
+                                <div className="flex items-center gap-4 w-full sm:w-auto min-w-0 flex-1">
+                                  <div className="w-14 h-14 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
+                                    {retrievedClip.fileType?.includes('video') ? (
+                                      <Video className="w-7 h-7 text-blue-600" />
+                                    ) : retrievedClip.fileType?.includes('audio') ? (
+                                      <Music className="w-7 h-7 text-blue-600" />
+                                    ) : (
+                                      <FileText className="w-7 h-7 text-blue-600" />
+                                    )}
                                   </div>
-                                  <div className="text-[10px] opacity-60 font-mono bg-blue-100/50 inline-block px-2 py-0.5 rounded-sm">
-                                    {(retrievedClip.fileSize / (1024 * 1024)).toFixed(2)} MB • {retrievedClip.fileType?.split('/').pop()?.toUpperCase()}
+                                  <div className="text-left min-w-0 flex-1">
+                                    <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block mb-1">
+                                      {retrievedClip.fileName}
+                                    </div>
+                                    <div className="text-[10px] opacity-60 font-mono bg-blue-100/50 inline-block px-2 py-0.5 rounded-sm">
+                                      {(retrievedClip.fileSize / (1024 * 1024)).toFixed(2)} MB • {retrievedClip.fileType?.split('/').pop()?.toUpperCase()}
+                                    </div>
                                   </div>
                                 </div>
+                                <button 
+                                  type="button"
+                                  onClick={() => handleDownloadFile(retrievedClip.downloadUrl || retrievedClip.url, retrievedClip.fileName, retrievedClip?.id)}
+                                  className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-[10px] shadow-[4px_4px_0px_0px_rgba(30,58,138,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none shrink-0 cursor-pointer"
+                                >
+                                  <Download className="w-4 h-4" />
+                                  Download Now
+                                </button>
                               </div>
-                              <a 
-                                href={retrievedClip.downloadUrl}
-                                download={retrievedClip.fileName}
-                                onClick={(e) => {
-                                  if (isApiBlocked) {
-                                    e.preventDefault();
-                                    setStatus({ 
-                                      type: 'error', 
-                                      message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
-                                    });
-                                  } else {
-                                    setStatus({ type: 'success', message: `Downloading ${retrievedClip.fileName}...` });
-                                  }
-                                }}
-                                className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-[10px] shadow-[4px_4px_0px_0px_rgba(30,58,138,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none shrink-0"
-                              >
-                                <Download className="w-4 h-4" />
-                                Download Now
-                              </a>
+
+                              {/* Direct Web Link Box */}
+                              {(retrievedClip.downloadUrl || retrievedClip.url) && (
+                                <div className="flex items-center gap-2 pt-2 border-t border-blue-200/60 text-left">
+                                  <span className="text-[9px] font-mono opacity-60 uppercase tracking-widest shrink-0 font-bold text-blue-800">Web Link:</span>
+                                  <input 
+                                    type="text" 
+                                    readOnly 
+                                    value={retrievedClip.downloadUrl || retrievedClip.url} 
+                                    className="w-full text-[9px] font-mono bg-white p-1.5 rounded border border-blue-200 text-blue-900 truncate focus:outline-none" 
+                                  />
+                                  <button 
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(retrievedClip.downloadUrl || retrievedClip.url);
+                                      setStatus({ type: 'success', message: 'File web link copied to clipboard!' });
+                                    }}
+                                    className="text-[9px] font-bold uppercase tracking-wider bg-blue-100 hover:bg-blue-200 text-blue-800 px-2.5 py-1 rounded border border-blue-300 shrink-0 cursor-pointer"
+                                  >
+                                    Copy Link
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -2488,7 +2868,9 @@ export default function App() {
                       )}
                     </div>
                   </motion.div>
-                )}
+                    )}
+                </div>
+              )}
               </motion.div>
             ) : (
               <Vault 

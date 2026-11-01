@@ -74,6 +74,8 @@ service cloud.firestore {
                       isValidClip(request.resource.data);
       allow get: if true;
       allow update: if (isDocOwner() && isValidClip(request.resource.data)) ||
+                      (resource.data.get('uploadStatus', '') == 'uploading' &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uploadStatus', 'files', 'hasFile', 'downloadUrl', 'fileName', 'fileType', 'fileSize'])) ||
                       (resource.data.get('isCollection', false) == true &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['submissions', 'submissionCount']) &&
                        request.resource.data.submissions is list) ||
