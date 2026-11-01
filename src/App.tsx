@@ -657,10 +657,10 @@ export default function App() {
 
       setStatus({ type: 'success', message: `Downloaded ${fileName} successfully!` });
     } catch (err) {
-      console.warn("Direct blob fetch failed, triggering fallback download:", err);
+      console.warn("Direct blob fetch notice, triggering direct in-page download:", err);
       const a = document.createElement('a');
+      a.style.display = 'none';
       a.href = downloadUrl;
-      a.target = '_blank';
       a.download = fileName || 'download';
       document.body.appendChild(a);
       a.click();
