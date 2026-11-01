@@ -580,10 +580,15 @@ export default function App() {
         isComplete: true
       });
     } else {
-      // Stage 1: SnapTube Link Resolution Phase (0% - No artificial numbers)
+      // Stage 1: Live Byte Upload Stream Telemetry (synced from Firestore uploadProgress)
+      const livePercent = typeof retrievedClip.uploadProgress === 'number' ? retrievedClip.uploadProgress : 0;
+      const liveBytes = typeof retrievedClip.bytesTransferred === 'number' 
+        ? retrievedClip.bytesTransferred 
+        : Math.round((livePercent / 100) * totalBytes);
+
       setRetrievalProgress({
-        percent: 0,
-        loadedBytes: 0,
+        percent: livePercent,
+        loadedBytes: liveBytes,
         totalBytes,
         isComplete: false
       });
@@ -1411,7 +1416,7 @@ export default function App() {
       const isCollectionMode = shareMode === 'collection';
 
       const clipData: any = {
-        content: savedText || 'Pro Max Collection Drop Box',
+        content: savedText || (isCollectionMode ? 'Pro Max Collection Drop Box' : ''),
         createdAt: serverTimestamp(),
         expiresAt: Timestamp.fromDate(expiresAt),
         authorUid: auth.currentUser?.uid || null,
@@ -1444,38 +1449,73 @@ export default function App() {
       // 2. Ultra-Fast File-to-Link Converter Engine (< 0.5s conversion time)
       if (hasFiles) {
         const convertFilesToLinksFast = async (files: File[], code: string): Promise<any[]> => {
-          // Primary Engine: Local Express Server Asset Converter (/api/upload)
+          // Primary Engine: Local Express Server Asset Converter with XHR Byte Telemetry (/api/upload)
           try {
             const formData = new FormData();
             files.forEach(f => formData.append('files', f));
 
             const token = await auth.currentUser?.getIdToken();
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout limit
+            let lastUpdate = 0;
 
-            const res = await fetch('/api/upload', {
-              method: 'POST',
-              headers: {
-                ...(token && { 'Authorization': `Bearer ${token}` })
-              },
-              body: formData,
-              signal: controller.signal
+            const uploaded = await new Promise<any[]>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                  const currentTransferred = e.loaded;
+                  const currentPercent = Math.min(99, Math.round((currentTransferred / (totalBytes || e.total || 1)) * 100));
+                  
+                  setTransferProgress(prev => prev ? {
+                    ...prev,
+                    bytesTransferred: currentTransferred,
+                    percent: currentPercent,
+                    status: 'uploading'
+                  } : null);
+
+                  const now = Date.now();
+                  if (now - lastUpdate > 150) {
+                    lastUpdate = now;
+                    updateDoc(doc(db, 'clips', code), {
+                      uploadProgress: currentPercent,
+                      bytesTransferred: currentTransferred
+                    }).catch(() => {});
+                  }
+                }
+              };
+
+              xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  try {
+                    const data = JSON.parse(xhr.responseText);
+                    if (data.files && data.files.length > 0) {
+                      resolve(data.files.map((f: any) => ({
+                        fileName: f.fileName,
+                        fileType: f.fileType,
+                        fileSize: f.fileSize,
+                        downloadUrl: f.downloadUrl.startsWith('/') 
+                          ? `${window.location.origin}${f.downloadUrl}` 
+                          : f.downloadUrl
+                      })));
+                    } else {
+                      reject(new Error("No files in upload response"));
+                    }
+                  } catch (err) {
+                    reject(err);
+                  }
+                } else {
+                  reject(new Error(`Server upload HTTP ${xhr.status}`));
+                }
+              };
+
+              xhr.onerror = () => reject(new Error('XHR upload error'));
+              xhr.ontimeout = () => reject(new Error('XHR upload timeout'));
+              xhr.timeout = 10000;
+
+              xhr.open('POST', '/api/upload');
+              if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+              xhr.send(formData);
             });
-            clearTimeout(timeoutId);
 
-            if (res.ok) {
-              const data = await res.json();
-              if (data.files && data.files.length > 0) {
-                return data.files.map((f: any) => ({
-                  fileName: f.fileName,
-                  fileType: f.fileType,
-                  fileSize: f.fileSize,
-                  downloadUrl: f.downloadUrl.startsWith('/') 
-                    ? `${window.location.origin}${f.downloadUrl}` 
-                    : f.downloadUrl
-                }));
-              }
-            }
+            return uploaded;
           } catch (err) {
             console.warn("Express asset upload notice, falling back to Firebase Storage:", err);
           }
@@ -1483,6 +1523,7 @@ export default function App() {
           // Fallback Engine: Firebase Storage Resumable Stream
           const bytesPerFile = new Array(files.length).fill(0);
           activeUploadTasksRef.current = [];
+          let lastStorageUpdate = 0;
 
           return Promise.all(
             files.map((file, index) => {
@@ -1504,6 +1545,15 @@ export default function App() {
                       percent: currentPercent,
                       status: 'uploading'
                     } : null);
+
+                    const now = Date.now();
+                    if (now - lastStorageUpdate > 150) {
+                      lastStorageUpdate = now;
+                      updateDoc(doc(db, 'clips', code), {
+                        uploadProgress: currentPercent,
+                        bytesTransferred: currentTransferred
+                      }).catch(() => {});
+                    }
                   },
                   (err) => {
                     console.error('Firebase upload error:', file.name, err);
@@ -2522,22 +2572,19 @@ export default function App() {
                     {/* Pill Progress Loader FIRST */}
                     {((retrievedClip.files && retrievedClip.files.length > 0) || retrievedClip.hasFile) && (
                       <div className="bg-white p-4 border border-[#141414]/10 rounded-md space-y-2">
-                        {/* Pill Capsule Progress Loader - SnapTube Link Engine Model */}
-                        <div className="relative w-full h-12 bg-[#F3F2F0] rounded-full overflow-hidden flex items-center justify-between px-6">
+                        {/* Pill Capsule Progress Loader - Vibrant Color Styling */}
+                        <div className="relative w-full h-12 bg-blue-50 border-2 border-blue-200 rounded-full overflow-hidden flex items-center justify-between px-6 shadow-inner">
                           <div 
-                            className="absolute left-0 top-0 bottom-0 bg-[#E2E1DC] transition-all duration-300 ease-out rounded-full"
+                            className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-500 transition-all duration-300 ease-out rounded-full"
                             style={{ width: `${retrievalProgress?.percent || 0}%` }}
                           />
-                          <span className="relative z-10 text-[#7C7C80] font-bold text-xs sm:text-sm flex items-center gap-2">
+                          <span className={`relative z-10 font-bold text-xs sm:text-sm flex items-center gap-2 ${retrievalProgress?.percent && retrievalProgress.percent > 40 ? 'text-white' : 'text-blue-900'}`}>
                             {!retrievalProgress?.isComplete && (
                               <RefreshCw className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
                             )}
-                            {retrievalProgress?.isComplete 
-                              ? "File Link Ready" 
-                              : "Resolving file link from server..."
-                            }
+                            {retrievalProgress?.isComplete ? "File Link Ready" : "File Stream"}
                           </span>
-                          <span className="relative z-10 text-[#7C7C80] font-mono font-bold text-sm sm:text-lg">
+                          <span className={`relative z-10 font-mono font-extrabold text-sm sm:text-lg ${retrievalProgress?.percent && retrievalProgress.percent > 80 ? 'text-white' : 'text-blue-900'}`}>
                             {retrievalProgress?.percent || 0}%
                           </span>
                         </div>
@@ -2715,59 +2762,34 @@ export default function App() {
                                 {retrievedClip.files.map((file: any, idx: number) => {
                                   const fileLink = file.downloadUrl || file.url || retrievedClip.downloadUrl || '';
                                   return (
-                                    <div key={idx} className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-4 rounded-sm flex flex-col gap-3 shadow-[3px_3px_0px_0px_rgba(59,130,246,0.15)]">
-                                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                                        <div className="flex items-center gap-3 w-full sm:w-auto min-w-0 flex-1">
-                                          <div className="w-10 h-10 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
-                                            {file.fileType?.includes('video') ? (
-                                              <Video className="w-5 h-5 text-blue-600" />
-                                            ) : file.fileType?.includes('audio') ? (
-                                              <Music className="w-5 h-5 text-blue-600" />
-                                            ) : (
-                                              <FileText className="w-5 h-5 text-blue-600" />
-                                            )}
+                                    <div key={idx} className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-4 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[3px_3px_0px_0px_rgba(59,130,246,0.15)]">
+                                      <div className="flex items-center gap-3 w-full sm:w-auto min-w-0 flex-1">
+                                        <div className="w-10 h-10 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
+                                          {file.fileType?.includes('video') ? (
+                                            <Video className="w-5 h-5 text-blue-600" />
+                                          ) : file.fileType?.includes('audio') ? (
+                                            <Music className="w-5 h-5 text-blue-600" />
+                                          ) : (
+                                            <FileText className="w-5 h-5 text-blue-600" />
+                                          )}
+                                        </div>
+                                        <div className="text-left min-w-0 flex-1">
+                                          <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block">
+                                            {file.fileName}
                                           </div>
-                                          <div className="text-left min-w-0 flex-1">
-                                            <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block">
-                                              {file.fileName}
-                                            </div>
-                                            <div className="text-[9px] opacity-60 font-mono">
-                                              {(file.fileSize / (1024 * 1024)).toFixed(2)} MB • {file.fileType?.split('/').pop()?.toUpperCase()}
-                                            </div>
+                                          <div className="text-[9px] opacity-60 font-mono">
+                                            {(file.fileSize / (1024 * 1024)).toFixed(2)} MB • {file.fileType?.split('/').pop()?.toUpperCase()}
                                           </div>
                                         </div>
-                                        <button 
-                                          type="button"
-                                          onClick={() => handleDownloadFile(fileLink, file.fileName, retrievedClip?.id)}
-                                          className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 font-bold uppercase tracking-widest text-[9px] shadow-[2px_2px_0px_0px_rgba(30,58,138,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none shrink-0 cursor-pointer"
-                                        >
-                                          <Download className="w-3.5 h-3.5" />
-                                          Download
-                                        </button>
                                       </div>
-
-                                      {/* Direct Web Link Box */}
-                                      {fileLink && (
-                                        <div className="flex items-center gap-2 pt-2 border-t border-blue-200/60 text-left">
-                                          <span className="text-[9px] font-mono opacity-60 uppercase tracking-widest shrink-0 font-bold text-blue-800">Web Link:</span>
-                                          <input 
-                                            type="text" 
-                                            readOnly 
-                                            value={fileLink} 
-                                            className="w-full text-[9px] font-mono bg-white p-1.5 rounded border border-blue-200 text-blue-900 truncate focus:outline-none" 
-                                          />
-                                          <button 
-                                            type="button"
-                                            onClick={() => {
-                                              navigator.clipboard.writeText(fileLink);
-                                              setStatus({ type: 'success', message: 'File web link copied to clipboard!' });
-                                            }}
-                                            className="text-[9px] font-bold uppercase tracking-wider bg-blue-100 hover:bg-blue-200 text-blue-800 px-2.5 py-1 rounded border border-blue-300 shrink-0 cursor-pointer"
-                                          >
-                                            Copy Link
-                                          </button>
-                                        </div>
-                                      )}
+                                      <button 
+                                        type="button"
+                                        onClick={() => handleDownloadFile(fileLink, file.fileName, retrievedClip?.id)}
+                                        className="w-full sm:w-auto bg-blue-600 text-white px-4 py-2 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 font-bold uppercase tracking-widest text-[9px] shadow-[2px_2px_0px_0px_rgba(30,58,138,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none shrink-0 cursor-pointer"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                        Download
+                                      </button>
                                     </div>
                                   );
                                 })}
@@ -2776,65 +2798,40 @@ export default function App() {
                           )}
 
                           {(!retrievedClip.files || retrievedClip.files.length === 0) && retrievedClip.hasFile && (
-                            <div className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-5 rounded-sm flex flex-col gap-4 shadow-[4px_4px_0px_0px_rgba(59,130,246,0.2)]">
-                              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6">
-                                <div className="flex items-center gap-4 w-full sm:w-auto min-w-0 flex-1">
-                                  <div className="w-14 h-14 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
-                                    {retrievedClip.fileType?.includes('video') ? (
-                                      <Video className="w-7 h-7 text-blue-600" />
-                                    ) : retrievedClip.fileType?.includes('audio') ? (
-                                      <Music className="w-7 h-7 text-blue-600" />
-                                    ) : (
-                                      <FileText className="w-7 h-7 text-blue-600" />
-                                    )}
+                            <div className="bg-blue-50 border-2 border-blue-200 p-3 sm:p-5 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 shadow-[4px_4px_0px_0px_rgba(59,130,246,0.2)]">
+                              <div className="flex items-center gap-4 w-full sm:w-auto min-w-0 flex-1">
+                                <div className="w-14 h-14 bg-blue-100 border border-blue-200 rounded-sm flex items-center justify-center shrink-0">
+                                  {retrievedClip.fileType?.includes('video') ? (
+                                    <Video className="w-7 h-7 text-blue-600" />
+                                  ) : retrievedClip.fileType?.includes('audio') ? (
+                                    <Music className="w-7 h-7 text-blue-600" />
+                                  ) : (
+                                    <FileText className="w-7 h-7 text-blue-600" />
+                                  )}
+                                </div>
+                                <div className="text-left min-w-0 flex-1">
+                                  <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block mb-1">
+                                    {retrievedClip.fileName}
                                   </div>
-                                  <div className="text-left min-w-0 flex-1">
-                                    <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block mb-1">
-                                      {retrievedClip.fileName}
-                                    </div>
-                                    <div className="text-[10px] opacity-60 font-mono bg-blue-100/50 inline-block px-2 py-0.5 rounded-sm">
-                                      {(retrievedClip.fileSize / (1024 * 1024)).toFixed(2)} MB • {retrievedClip.fileType?.split('/').pop()?.toUpperCase()}
-                                    </div>
+                                  <div className="text-[10px] opacity-60 font-mono bg-blue-100/50 inline-block px-2 py-0.5 rounded-sm">
+                                    {(retrievedClip.fileSize / (1024 * 1024)).toFixed(2)} MB • {retrievedClip.fileType?.split('/').pop()?.toUpperCase()}
                                   </div>
                                 </div>
-                                <button 
-                                  type="button"
-                                  onClick={() => handleDownloadFile(retrievedClip.downloadUrl || retrievedClip.url, retrievedClip.fileName, retrievedClip?.id)}
-                                  className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-[10px] shadow-[4px_4px_0px_0px_rgba(30,58,138,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none shrink-0 cursor-pointer"
-                                >
-                                  <Download className="w-4 h-4" />
-                                  Download Now
-                                </button>
                               </div>
-
-                              {/* Direct Web Link Box */}
-                              {(retrievedClip.downloadUrl || retrievedClip.url) && (
-                                <div className="flex items-center gap-2 pt-2 border-t border-blue-200/60 text-left">
-                                  <span className="text-[9px] font-mono opacity-60 uppercase tracking-widest shrink-0 font-bold text-blue-800">Web Link:</span>
-                                  <input 
-                                    type="text" 
-                                    readOnly 
-                                    value={retrievedClip.downloadUrl || retrievedClip.url} 
-                                    className="w-full text-[9px] font-mono bg-white p-1.5 rounded border border-blue-200 text-blue-900 truncate focus:outline-none" 
-                                  />
-                                  <button 
-                                    type="button"
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(retrievedClip.downloadUrl || retrievedClip.url);
-                                      setStatus({ type: 'success', message: 'File web link copied to clipboard!' });
-                                    }}
-                                    className="text-[9px] font-bold uppercase tracking-wider bg-blue-100 hover:bg-blue-200 text-blue-800 px-2.5 py-1 rounded border border-blue-300 shrink-0 cursor-pointer"
-                                  >
-                                    Copy Link
-                                  </button>
-                                </div>
-                              )}
+                              <button 
+                                type="button"
+                                onClick={() => handleDownloadFile(retrievedClip.downloadUrl || retrievedClip.url, retrievedClip.fileName, retrievedClip?.id)}
+                                className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 font-bold uppercase tracking-widest text-[10px] shadow-[4px_4px_0px_0px_rgba(30,58,138,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none shrink-0 cursor-pointer"
+                              >
+                                <Download className="w-4 h-4" />
+                                Download Now
+                              </button>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {retrievedClip.content && !retrievedClip.isCollection && (
+                      {Boolean(retrievedClip.content && retrievedClip.content.trim() !== '' && retrievedClip.content !== 'Pro Max Collection Drop Box' && !retrievedClip.isCollection) && (
                         <div className="space-y-4">
                           <div className="max-h-48 overflow-y-auto custom-scrollbar">
                             <p className="text-sm font-mono whitespace-pre-wrap break-all text-[#141414]/80">
