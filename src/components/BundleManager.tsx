@@ -83,22 +83,22 @@ export const BundleManager: React.FC<BundleManagerProps> = ({ user, tier, allUse
           bundles.map(bundle => (
             <div key={bundle.id} className="border-b py-2 flex justify-between items-center">
               <div>
-                <div className="font-semibold">{bundle.name}</div>
-                <div className="text-sm opacity-70">{bundle.clipIds.length} clips</div>
+                <div className="font-semibold text-neutral-900">{bundle.name}</div>
+                <div className="text-sm text-neutral-600 font-medium">{bundle.clipIds.length} clips</div>
                 <div className="text-xs text-blue-600 mt-1 break-all">
                   Share: {window.location.origin}/bundle/{bundle.id}
                 </div>
               </div>
               <button 
                 onClick={() => handleDeleteBundle(bundle.id)}
-                className="text-red-500 text-sm hover:underline"
+                className="text-red-600 text-sm font-semibold hover:underline"
               >
                 Delete
               </button>
             </div>
           ))
         ) : (
-          <p className="text-sm opacity-50">No bundles created yet.</p>
+          <p className="text-sm text-neutral-600 font-medium">No bundles created yet.</p>
         )}
       </div>
     </div>

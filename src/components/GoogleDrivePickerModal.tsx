@@ -137,7 +137,7 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
                 <h2 className="text-base sm:text-lg font-bold uppercase tracking-widest text-[#141414]">
                   Google Drive Files
                 </h2>
-                <p className="text-[10px] font-mono opacity-50">
+                <p className="text-xs font-mono font-medium text-neutral-600">
                   Select files to attach directly to your clip
                 </p>
               </div>
@@ -156,7 +156,7 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
           {token && (
             <div className="p-3 sm:px-5 border-b border-[#141414]/10 bg-[#E4E3E0]/70 flex items-center gap-2">
               <div className="relative flex-1">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 opacity-40" />
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
                 <input
                   type="text"
                   placeholder="Search Drive files..."
@@ -167,7 +167,7 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') loadFiles(searchQuery);
                   }}
-                  className="w-full pl-9 pr-3 py-2 bg-white border border-[#141414] rounded-sm text-xs font-mono focus:outline-none shadow-xs"
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-[#141414] rounded-sm text-xs font-mono placeholder:text-neutral-500 focus:outline-none shadow-xs"
                 />
               </div>
               <button
@@ -189,9 +189,9 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
                   <GoogleDriveIcon className="w-9 h-9" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-sm font-bold uppercase tracking-wider">Connect Google Drive</h3>
-                  <p className="text-xs opacity-60 max-w-sm mx-auto font-light">
-                    Sign in to authorize ClipCloud to read files you choose from your Google Drive.
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#141414]">Connect Google Drive</h3>
+                  <p className="text-xs text-neutral-700 max-w-sm mx-auto font-normal leading-relaxed">
+                    Sign in to authorize Sendarro to read files you choose from your Google Drive.
                   </p>
                 </div>
                 <button
@@ -203,8 +203,8 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
               </div>
             ) : loading ? (
               <div className="py-16 text-center space-y-3">
-                <RefreshCw className="w-6 h-6 animate-spin mx-auto opacity-40 text-[#141414]" />
-                <p className="text-xs font-mono uppercase tracking-widest opacity-50">
+                <RefreshCw className="w-6 h-6 animate-spin mx-auto text-neutral-700" />
+                <p className="text-xs font-mono uppercase tracking-wider text-neutral-700 font-semibold">
                   Loading Drive files...
                 </p>
               </div>
@@ -213,7 +213,7 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="font-bold">Error accessing Google Drive</p>
-                  <p className="opacity-80 mt-0.5">{error}</p>
+                  <p className="text-red-700 mt-0.5">{error}</p>
                   <button
                     onClick={onRequestConnect}
                     className="mt-2 text-xs font-bold uppercase underline tracking-wider"
@@ -224,8 +224,8 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
               </div>
             ) : files.length === 0 ? (
               <div className="py-16 text-center space-y-2">
-                <HardDrive className="w-8 h-8 mx-auto opacity-20" />
-                <p className="text-xs font-mono uppercase tracking-widest opacity-40">
+                <HardDrive className="w-8 h-8 mx-auto text-neutral-400" />
+                <p className="text-xs font-mono uppercase tracking-wider text-neutral-600 font-semibold">
                   No files found in Google Drive
                 </p>
               </div>
@@ -255,12 +255,12 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <FileText className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                          <FileText className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
                           <span className="text-xs font-bold text-[#141414] truncate">
                             {file.name}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-50">
+                        <div className="flex items-center gap-2 mt-1 text-[10px] font-mono text-neutral-600 font-medium">
                           <span>{formatFileSize(file.size)}</span>
                           {file.modifiedTime && (
                             <>
@@ -280,7 +280,7 @@ export const GoogleDrivePickerModal: React.FC<GoogleDrivePickerModalProps> = ({
           {/* Footer */}
           {token && (
             <div className="p-4 border-t border-[#141414] bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="text-xs font-mono opacity-60">
+              <div className="text-xs font-mono text-neutral-700 font-semibold">
                 {importing ? (
                   <span className="text-blue-600 font-bold flex items-center gap-2">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />

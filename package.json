@@ -12,6 +12,8 @@
     "start": "node server.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1164.0",
+    "@aws-sdk/s3-request-presigner": "^3.1164.0",
     "@google/genai": "^1.44.0",
     "@stripe/stripe-js": "^9.9.0",
     "@tailwindcss/vite": "^4.1.14",

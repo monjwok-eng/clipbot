@@ -45,12 +45,12 @@ export const IntegrationModal: React.FC<IntegrationModalProps> = ({ isOpen, onCl
               </div>
 
               <div>
-                <h2 className="text-xl font-bold uppercase tracking-widest">Connect {serviceName}</h2>
-                <p className="text-[10px] uppercase font-bold tracking-widest opacity-40 mt-1">ClipCloud Integration</p>
+                <h2 className="text-xl font-bold uppercase tracking-widest text-[#141414]">Connect {serviceName}</h2>
+                <p className="text-[11px] uppercase font-bold tracking-wider text-neutral-600 mt-1">Sendarro Integration</p>
               </div>
 
-              <p className="text-xs opacity-60 leading-relaxed font-light">
-                Linking your {serviceName} account allows ClipCloud to browse and select files for your clipboard. We only access the specific files you choose to share.
+              <p className="text-xs text-neutral-700 leading-relaxed font-normal">
+                Linking your {serviceName} account allows Sendarro to browse and select files for your clipboard. We only access the specific files you choose to share.
               </p>
 
               <div className="space-y-2 pt-2">
@@ -58,11 +58,11 @@ export const IntegrationModal: React.FC<IntegrationModalProps> = ({ isOpen, onCl
                   onClick={onIntegrate}
                   className="w-full bg-[#141414] text-[#E4E3E0] py-3.5 rounded-sm font-bold uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-[0.98] transition-all text-xs flex items-center justify-center gap-2"
                 >
-                  Integrate to ClipCloud
+                  Integrate to Sendarro
                 </button>
                 <button 
                   onClick={onClose}
-                  className="w-full py-2 text-[10px] uppercase font-bold tracking-widest opacity-50 hover:opacity-100 transition-opacity"
+                  className="w-full py-2 text-xs uppercase font-bold tracking-wider text-neutral-600 hover:text-neutral-900 transition-colors"
                 >
                   Cancel
                 </button>

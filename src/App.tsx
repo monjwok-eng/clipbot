@@ -70,6 +70,9 @@ import { db, auth, storage } from './firebase';
 import { Onboarding } from './components/Onboarding';
 import { IntegrationModal } from './components/IntegrationModal';
 import { GoogleDriveIcon, DropboxIcon, ICloudIcon } from './components/CloudIcons';
+import { ProductPage } from './components/ProductPage';
+import { PricingPage } from './components/PricingPage';
+import { SendarroLogo } from './components/SendarroLogo';
 
 // --- Types ---
 
@@ -170,69 +173,63 @@ const LandingPage = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () =>
       <div className="space-y-6 md:space-y-8">
         <div className="space-y-2">
           <div className="flex items-center gap-3 mb-2 md:mb-4">
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-[#141414] rounded-sm flex items-center justify-center">
-              <Share2 className="text-[#E4E3E0] w-5 h-5 md:w-6 md:h-6" />
-            </div>
-            <h1 className="text-lg md:text-xl font-bold uppercase tracking-[0.3em]">ClipCloud</h1>
+            <SendarroLogo className="h-10 sm:h-12 md:h-14 max-h-14" />
           </div>
-          <h2 className="text-4xl sm:text-5xl md:text-8xl font-serif italic leading-[0.8] tracking-tighter">
+          <h2 className="text-4xl sm:text-5xl md:text-7xl font-serif italic font-normal leading-[0.88] tracking-tighter text-[#141414]">
             Seamless<br />Sharing.
           </h2>
         </div>
-        <p className="text-sm md:text-lg opacity-60 font-light leading-relaxed max-w-[260px] sm:max-w-sm">
+        <p className="text-sm md:text-base text-neutral-600 font-normal leading-relaxed max-w-[280px] sm:max-w-md">
           The universal clipboard for your workspace. Share text, code, and links across devices instantly.
         </p>
       </div>
 
-      <div className="bg-white border border-[#141414] p-6 md:p-8 rounded-md shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] md:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] space-y-6 md:space-y-8">
-        <div className="space-y-4">
+      <div className="bg-white border border-[#141414] p-6 md:p-8 rounded-none md:rounded-md shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] md:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] space-y-6 md:space-y-8">
+        <div className="space-y-3 text-center">
           <button 
             onClick={onLogin}
-            className="w-full bg-[#141414] text-[#E4E3E0] py-4 md:py-6 rounded-md font-bold uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 text-xs md:text-base"
+            className="w-full bg-[#141414] text-[#E4E3E0] py-4 rounded-sm font-mono font-bold uppercase tracking-[0.15em] text-xs md:text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
           >
-            <Zap className="w-4 h-4 md:w-5 md:h-5 text-emerald-400" />
+            <Zap className="w-4 h-4 text-emerald-400" />
             Login with Google
           </button>
-          <p className="text-[9px] md:text-[10px] text-center opacity-40 uppercase tracking-widest">
+          <p className="text-[10px] sm:text-xs text-neutral-500 font-mono font-normal uppercase tracking-wider">
             Unlock 100k chars & 24h persistence
           </p>
         </div>
 
         <div className="relative flex items-center justify-center">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-[#141414]/10"></div>
+            <div className="w-full border-t border-[#141414]/15"></div>
           </div>
-          <span className="relative px-4 bg-white text-[9px] md:text-[10px] uppercase tracking-widest opacity-40 font-bold">Or</span>
+          <span className="relative px-3 bg-white text-[10px] uppercase tracking-wider text-neutral-400 font-mono font-normal">Or</span>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3 text-center">
           <button 
             onClick={onGuest}
-            className="w-full border border-[#141414] text-[#141414] py-4 md:py-6 rounded-md font-bold uppercase tracking-[0.2em] hover:bg-[#141414] hover:text-[#E4E3E0] transition-all flex items-center justify-center gap-3 text-xs md:text-base"
+            className="w-full border-2 border-[#141414] text-[#141414] py-4 rounded-sm font-mono font-bold uppercase tracking-[0.15em] text-xs md:text-sm hover:bg-[#141414] hover:text-[#E4E3E0] transition-all flex items-center justify-center gap-2.5 cursor-pointer"
           >
             Continue as Guest
           </button>
-          <p className="text-[9px] md:text-[10px] text-center opacity-40 uppercase tracking-widest">
-            Limited to 10k chars & 60s clips
+          <p className="text-[10px] sm:text-xs text-neutral-500 font-mono font-normal uppercase tracking-wider">
+            Limited to 10k chars & 1h clips
           </p>
         </div>
 
         <div className="pt-2 flex justify-center">
           <button 
-            onClick={() => {
-              // Trigger onboarding directly for preview
-              onGuest();
-            }}
-            className="text-[9px] md:text-[10px] uppercase tracking-widest font-bold opacity-40 hover:opacity-100 transition-opacity flex items-center gap-2"
+            onClick={onGuest}
+            className="text-[11px] font-mono uppercase tracking-wider font-medium text-neutral-500 hover:text-neutral-950 transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            <HelpCircle className="w-3 h-3 md:w-4 md:h-4" />
+            <HelpCircle className="w-3.5 h-3.5 text-neutral-400" />
             How it works
           </button>
         </div>
       </div>
     </div>
     
-    <div className="absolute bottom-4 md:bottom-8 text-[8px] md:text-[10px] uppercase tracking-[0.3em] md:tracking-[0.5em] opacity-20 font-bold text-center px-4">
+    <div className="absolute bottom-4 md:bottom-8 text-[10px] font-mono uppercase tracking-[0.25em] font-normal text-neutral-400 text-center px-4">
       Universal Clipboard Protocol v2.4
     </div>
   </div>
@@ -304,8 +301,8 @@ const Vault = ({
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-12 space-y-4">
-      <RefreshCw className="w-8 h-8 animate-spin opacity-20" />
-      <p className="text-[10px] uppercase tracking-widest font-bold opacity-40">Accessing Vault...</p>
+      <RefreshCw className="w-8 h-8 animate-spin text-neutral-400" />
+      <p className="text-xs uppercase tracking-wider font-semibold text-neutral-600">Accessing Vault...</p>
     </div>
   );
 
@@ -318,17 +315,17 @@ const Vault = ({
       <div className="space-y-2 text-center">
         <div className="flex items-center justify-center gap-2 text-blue-600">
           <Lock className="w-4 h-4" />
-          <h2 className="text-xl sm:text-2xl font-serif italic">Locked Vault</h2>
+          <h2 className="text-xl sm:text-2xl font-serif italic text-[#141414]">Locked Vault</h2>
         </div>
-        <p className="text-[10px] sm:text-xs opacity-60 max-w-[240px] sm:max-w-xs mx-auto">
+        <p className="text-xs text-neutral-700 max-w-[260px] sm:max-w-sm mx-auto leading-relaxed">
           Pro Max Insurance: Expired clips are held here for 7 days before permanent deletion.
         </p>
       </div>
 
       {vaultClips.length === 0 ? (
-        <div className="border-2 border-dashed border-[#141414]/10 rounded-sm p-12 text-center space-y-4">
-          <Shield className="w-8 h-8 mx-auto opacity-10" />
-          <p className="text-[10px] uppercase tracking-widest font-bold opacity-30">Your vault is empty</p>
+        <div className="border-2 border-dashed border-[#141414]/15 rounded-sm p-12 text-center space-y-4">
+          <Shield className="w-8 h-8 mx-auto text-neutral-400" />
+          <p className="text-xs uppercase tracking-wider font-semibold text-neutral-600">Your vault is empty</p>
         </div>
       ) : (
         <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
@@ -338,7 +335,7 @@ const Vault = ({
                 onClick={(e) => handleDelete(e, clip.id)}
                 className="absolute top-2 right-2 p-1 bg-white hover:bg-red-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <X className="w-3 h-3 text-red-600" />
+                <X className="w-3.5 h-3.5 text-red-600" />
               </button>
               {reactivatingClips[clip.id] > 0 && (
                 <motion.div 
@@ -351,10 +348,10 @@ const Vault = ({
               <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold font-mono bg-[#141414] text-white px-2 py-0.5 rounded-sm">{clip.id}</span>
-                  <span className={`text-[9px] uppercase tracking-widest font-bold ${
+                  <span className={`text-[10px] uppercase tracking-wider font-bold ${
                     reactivatingClips[clip.id] > 0 || clip.expiresAt.toMillis() > getSyncedNow()
-                      ? "text-emerald-600" 
-                      : "opacity-40"
+                      ? "text-emerald-700" 
+                      : "text-neutral-600"
                   }`}>
                     {reactivatingClips[clip.id] > 0 || clip.expiresAt.toMillis() > getSyncedNow()
                       ? "Live / Active" 
@@ -362,14 +359,14 @@ const Vault = ({
                     }
                   </span>
                   {clip.burnOnRead && (
-                    <span className="text-[8px] uppercase tracking-widest font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-sm border border-red-100 flex items-center gap-1">
-                      <Zap className="w-2 h-2" />
+                    <span className="text-[9px] uppercase tracking-wider font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded-sm border border-red-200 flex items-center gap-1">
+                      <Zap className="w-2.5 h-2.5" />
                       Burn
                     </span>
                   )}
                   {clip.viewCount !== undefined && (
-                    <span className="text-[8px] uppercase tracking-widest font-bold opacity-30 flex items-center gap-1">
-                      <HelpCircle className="w-2 h-2" />
+                    <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-600 flex items-center gap-1">
+                      <HelpCircle className="w-2.5 h-2.5" />
                       {clip.viewCount} Views
                     </span>
                   )}
@@ -377,10 +374,10 @@ const Vault = ({
                 <div className="flex items-center gap-2">
                   <button 
                     onClick={() => onCopy(clip.id)}
-                    className={`p-1 rounded-sm transition-all ${copiedId === clip.id ? 'bg-emerald-500 text-white' : 'hover:bg-[#141414]/5'}`}
+                    className={`p-1 rounded-sm transition-all ${copiedId === clip.id ? 'bg-emerald-500 text-white' : 'hover:bg-[#141414]/5 text-neutral-600 hover:text-neutral-900'}`}
                     title="Copy Code"
                   >
-                    {copiedId === clip.id ? <CheckCircle2 className="w-3 h-3" /> : <Copy className="w-3 h-3 opacity-40" />}
+                    {copiedId === clip.id ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                   {clip.content && (
                     <button 
@@ -393,10 +390,10 @@ const Vault = ({
                           console.warn('Failed to copy content:', err);
                         }
                       }}
-                      className={`p-1 rounded-sm transition-all ${copiedId === clip.id + '-content' ? 'bg-emerald-500 text-white' : 'hover:bg-[#141414]/5'}`}
+                      className={`p-1 rounded-sm transition-all ${copiedId === clip.id + '-content' ? 'bg-emerald-500 text-white' : 'hover:bg-[#141414]/5 text-neutral-600 hover:text-neutral-900'}`}
                       title="Copy Content"
                     >
-                      {copiedId === clip.id + '-content' ? <CheckCircle2 className="w-3 h-3" /> : <FileText className="w-3 h-3 opacity-40" />}
+                      {copiedId === clip.id + '-content' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
                     </button>
                   )}
                   <AnimatePresence>
@@ -406,9 +403,9 @@ const Vault = ({
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.8 }}
-                        className="text-[9px] font-bold uppercase tracking-widest text-blue-600 flex items-center gap-1 bg-blue-100 px-2 py-1 rounded-sm"
+                        className="text-[10px] font-bold uppercase tracking-wider text-blue-700 flex items-center gap-1 bg-blue-100 px-2 py-1 rounded-sm"
                       >
-                        <Clock className="w-3 h-3 animate-pulse" />
+                        <Clock className="w-3.5 h-3.5 animate-pulse" />
                         Active: {formatTime(reactivatingClips[clip.id])}
                       </motion.div>
                     ) : (
@@ -418,7 +415,7 @@ const Vault = ({
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.8 }}
                         onClick={() => onReactivate(clip.id)}
-                        className="text-[9px] font-bold uppercase tracking-widest text-blue-600 hover:underline flex items-center gap-1"
+                        className="text-[10px] font-bold uppercase tracking-wider text-blue-700 hover:underline flex items-center gap-1 cursor-pointer"
                       >
                         <Zap className="w-3 h-3" />
                         Reactivate
@@ -427,7 +424,7 @@ const Vault = ({
                   </AnimatePresence>
                 </div>
               </div>
-              <p className="text-xs opacity-60 line-clamp-2 font-mono">{clip.content || (clip.hasFile ? `[File: ${clip.fileName}]` : 'No content')}</p>
+              <p className="text-xs text-neutral-700 line-clamp-2 font-mono leading-relaxed">{clip.content || (clip.hasFile ? `[File: ${clip.fileName}]` : 'No content')}</p>
             </div>
           ))}
         </div>
@@ -511,6 +508,7 @@ export default function App() {
   const [showLegalModal, setShowLegalModal] = useState(false);
   const [showCookieBanner, setShowCookieBanner] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [currentView, setCurrentView] = useState<'app' | 'product' | 'pricing'>('app');
   const [activeIntegration, setActiveIntegration] = useState<string | null>(null);
   useEffect(() => {
     if (showLoginModal) {
@@ -528,7 +526,9 @@ export default function App() {
   const [recentCodes, setRecentCodes] = useState<string[]>(JSON.parse(localStorage.getItem('recentCodes') || '[]'));
   const [customCodeInput, setCustomCodeInput] = useState<string>('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [shareMode, setShareMode] = useState<'text' | 'file' | 'collection'>('text');
+  const [shareMode, setShareMode] = useState<'text' | 'file' | 'collection'>('file');
+  const [isSendExpanded, setIsSendExpanded] = useState(false);
+  const [isLinkUnavailable, setIsLinkUnavailable] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [burnOnRead, setBurnOnRead] = useState(false);
   const [contributorName, setContributorName] = useState<string>('');
@@ -537,6 +537,7 @@ export default function App() {
     totalBytes: number;
     bytesTransferred: number;
     percent: number;
+    speed?: string;
     status: 'uploading' | 'ready' | 'error' | 'cancelled';
     fileName: string;
     fileCount: number;
@@ -1408,7 +1409,7 @@ export default function App() {
       setStatus({ type: 'loading', message: `Code ready! Uploading ${filesToUpload.length} file(s)...` });
     } else {
       setTransferProgress(null);
-      setStatus({ type: 'success', message: 'Clip shared successfully!' });
+      setStatus({ type: 'idle', message: '' });
     }
     
     try {
@@ -1449,7 +1450,77 @@ export default function App() {
       // 2. Ultra-Fast File-to-Link Converter Engine (< 0.5s conversion time)
       if (hasFiles) {
         const convertFilesToLinksFast = async (files: File[], code: string): Promise<any[]> => {
-          // Primary Engine: Local Express Server Asset Converter with XHR Byte Telemetry (/api/upload)
+          // Engine 1: Direct-to-R2 Architecture via Presigned URLs (Completely Bypasses Node.js Server for File Bytes)
+          try {
+            const r2UploadPromises = files.map(async (file) => {
+              const res = await fetch('/api/get-upload-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fileName: file.name, fileType: file.type, fileSize: file.size })
+              });
+              const data = await res.json();
+              if (!data.directR2 || !data.uploadUrl) {
+                throw new Error("R2 direct upload not configured");
+              }
+
+              // Direct PUT upload to Cloudflare R2 bucket with byte telemetry
+              return new Promise<any>((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                let lastR2Update = 0;
+
+                xhr.upload.onprogress = (e) => {
+                  if (e.lengthComputable) {
+                    const currentTransferred = e.loaded;
+                    const currentPercent = Math.min(99, Math.round((currentTransferred / (file.size || 1)) * 100));
+
+                    setTransferProgress(prev => prev ? {
+                      ...prev,
+                      bytesTransferred: currentTransferred,
+                      percent: currentPercent,
+                      status: 'uploading'
+                    } : null);
+
+                    const now = Date.now();
+                    if (now - lastR2Update > 150) {
+                      lastR2Update = now;
+                      updateDoc(doc(db, 'clips', code), {
+                        uploadProgress: currentPercent,
+                        bytesTransferred: currentTransferred
+                      }).catch(() => {});
+                    }
+                  }
+                };
+
+                xhr.onload = () => {
+                  if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve({
+                      fileName: file.name,
+                      fileType: file.type || 'application/octet-stream',
+                      fileSize: file.size,
+                      downloadUrl: data.publicUrl
+                    });
+                  } else {
+                    reject(new Error(`Direct R2 upload failed HTTP ${xhr.status}`));
+                  }
+                };
+
+                xhr.onerror = () => reject(new Error('R2 direct upload network error'));
+                xhr.ontimeout = () => reject(new Error('R2 direct upload timeout'));
+                xhr.timeout = 600000; // 10 minutes timeout for direct uploads
+
+                xhr.open('PUT', data.uploadUrl);
+                xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+                xhr.send(file);
+              });
+            });
+
+            const uploadedR2 = await Promise.all(r2UploadPromises);
+            return uploadedR2;
+          } catch (r2Err) {
+            console.warn("Direct R2 presigned upload notice (falling back to server/storage):", r2Err);
+          }
+
+          // Engine 2: Local Express Server Asset Converter with XHR Byte Telemetry (/api/upload)
           try {
             const formData = new FormData();
             files.forEach(f => formData.append('files', f));
@@ -1605,7 +1676,7 @@ export default function App() {
           status: 'ready'
         } : null);
 
-        setStatus({ type: 'success', message: 'All file links created & sent to Firebase!' });
+        setStatus({ type: 'idle', message: '' });
       }
     } catch (err: any) {
       if (err?.code === 'storage/canceled') {
@@ -1778,7 +1849,7 @@ export default function App() {
           const gracePeriodMs = hasFiles ? 15 * 60 * 1000 : 5 * 60 * 1000;
           const graceMins = Math.round(gracePeriodMs / 60000);
           if (!data.isBurned) {
-            setStatus({ type: 'success', message: `Clip retrieved! ${fileStatusMsg} This clip will self-destruct in ${graceMins} minutes.` });
+            setStatus({ type: 'idle', message: '' });
             try {
               await updateDoc(docRef, {
                 isBurned: true,
@@ -1789,10 +1860,10 @@ export default function App() {
             }
           } else {
             const secondsLeft = Math.max(0, Math.ceil((gracePeriodMs - (nowMillis - data.retrievedAt.toMillis())) / 1000));
-            setStatus({ type: 'success', message: `Clip retrieved! ${fileStatusMsg} Self-destructing in ${formatTime(secondsLeft)}.` });
+            setStatus({ type: 'idle', message: '' });
           }
         } else {
-          setStatus({ type: 'success', message: `Clip retrieved! ${fileStatusMsg}` });
+          setStatus({ type: 'idle', message: '' });
           try {
             await updateDoc(docRef, {
               viewCount: (data.viewCount || 0) + 1
@@ -1802,12 +1873,15 @@ export default function App() {
           }
         }
         
+        setIsLinkUnavailable(false);
         setInputCode('');
       } else {
+        setIsLinkUnavailable(false);
         setStatus({ type: 'error', message: 'Invalid or expired code.' });
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.GET, path);
+      setIsLinkUnavailable(false);
+      setStatus({ type: 'error', message: 'Invalid or expired code.' });
     }
   };
 
@@ -2017,7 +2091,7 @@ export default function App() {
     <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans selection:bg-[#141414] selection:text-[#E4E3E0]">
       {authLoading ? (
         <div className="fixed inset-0 bg-[#E4E3E0] flex items-center justify-center">
-          <RefreshCw className="w-8 h-8 animate-spin opacity-20" />
+          <RefreshCw className="w-8 h-8 animate-spin text-neutral-400" />
         </div>
       ) : (
         <>
@@ -2025,20 +2099,38 @@ export default function App() {
             {!user && !isGuest && <LandingPage onLogin={handleLogin} onGuest={handleGuestEnter} />}
           </AnimatePresence>
           {/* Header */}
-      <header className="fixed top-0 left-0 right-0 border-b border-[#141414] p-2 sm:p-4 lg:px-8 flex justify-between items-center bg-[#E4E3E0]/80 backdrop-blur-md z-50">
+      <header className="fixed top-0 left-0 right-0 border-b border-[#141414] p-2 sm:p-4 lg:px-8 flex justify-between items-center relative bg-[#E4E3E0]/90 backdrop-blur-md z-50">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-[#141414] rounded-sm flex items-center justify-center">
-            <Share2 className="text-[#E4E3E0] w-5 h-5" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tighter uppercase italic font-serif">ClipCloud</h1>
+          <SendarroLogo onClick={() => setCurrentView('app')} className="h-10 sm:h-12 md:h-14 max-h-14" />
         </div>
+
+        <nav className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-8 font-serif italic text-base sm:text-lg font-medium text-neutral-900 tracking-wide">
+          <button 
+            onClick={() => setCurrentView('app')} 
+            className={`hover:text-black transition-colors cursor-pointer ${currentView === 'app' ? 'underline underline-offset-8 text-black font-semibold' : 'text-neutral-700'}`}
+          >
+            Transfer
+          </button>
+          <button 
+            onClick={() => setCurrentView('product')} 
+            className={`hover:text-black transition-colors cursor-pointer ${currentView === 'product' ? 'underline underline-offset-8 text-black font-semibold' : 'text-neutral-700'}`}
+          >
+            Product
+          </button>
+          <button 
+            onClick={() => setCurrentView('pricing')} 
+            className={`hover:text-black transition-colors cursor-pointer ${currentView === 'pricing' ? 'underline underline-offset-8 text-black font-semibold' : 'text-neutral-700'}`}
+          >
+            Pricing
+          </button>
+        </nav>
         <div className="flex items-center gap-4">
           {user ? (
             <div className="flex items-center gap-4">
               {tier !== 'promax' && (
                 <button 
                   onClick={() => setShowProModal(true)}
-                  className="bg-emerald-500 text-black text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full hover:bg-emerald-400 transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  className="bg-emerald-500 text-black text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full hover:bg-emerald-400 transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer"
                 >
                   <Zap className="w-3 h-3" />
                   {tier === 'pro' ? 'Go Pro Max' : 'Upgrade'}
@@ -2046,11 +2138,11 @@ export default function App() {
               )}
               <div className="flex items-center gap-3">
                 <div className="text-right hidden sm:block">
-                  <div className="text-[10px] font-bold uppercase tracking-widest leading-none flex items-center justify-end gap-1">
+                  <div className="text-[11px] font-bold uppercase tracking-wider leading-none flex items-center justify-end gap-1 text-[#141414]">
                     {user.displayName}
                     {isPro && <Zap className={`w-2.5 h-2.5 ${isProMax ? 'text-blue-600 fill-blue-600' : 'text-emerald-600 fill-emerald-600'}`} />}
                   </div>
-                  <div className="text-[8px] opacity-40 font-mono">{user.email}</div>
+                  <div className="text-[10px] text-neutral-600 font-mono font-medium">{user.email}</div>
                 </div>
                 
                 <div className="relative group">
@@ -2072,20 +2164,22 @@ export default function App() {
 
                 <button 
                   onClick={handleLogout}
-                  className="ml-1 p-2 border border-transparent hover:border-[#141414] hover:bg-white rounded-sm transition-all group"
+                  className="ml-1 p-2 border border-transparent hover:border-[#141414] hover:bg-white rounded-sm transition-all group cursor-pointer"
                   title="Logout"
                 >
-                  <X className="w-4 h-4 opacity-40 group-hover:opacity-100 transition-opacity" />
+                  <X className="w-4 h-4 text-neutral-600 group-hover:text-neutral-900 transition-colors" />
                 </button>
               </div>
             </div>
           ) : (
-            <button 
-              onClick={() => setShowLoginModal(true)}
-              className="text-xs sm:text-sm font-semibold uppercase tracking-widest border-b border-[#141414] pb-0.5 sm:pb-1 hover:opacity-50 transition-opacity whitespace-nowrap shrink-0 mr-2 sm:mr-4"
-            >
-              Login for Pro
-            </button>
+            <div className="flex items-center gap-2 sm:gap-4">
+              <button 
+                onClick={() => setShowLoginModal(true)}
+                className="text-[10px] sm:text-xs md:text-sm font-bold uppercase tracking-wider border-b-2 border-[#141414] pb-0.5 hover:text-neutral-600 transition-colors whitespace-nowrap cursor-pointer text-center"
+              >
+                Login for Pro
+              </button>
+            </div>
           )}
         </div>
       </header>
@@ -2107,21 +2201,21 @@ export default function App() {
                 >
                   <button 
                     onClick={() => setShowLoginModal(false)}
-                    className="absolute top-4 right-4 p-2 hover:bg-[#141414]/5 rounded-sm transition-colors"
+                    className="absolute top-4 right-4 p-2 hover:bg-[#141414]/5 rounded-sm transition-colors text-neutral-700 hover:text-neutral-950"
                   >
                     <X className="w-5 h-5" />
                   </button>
                   <div className="space-y-6 text-center">
-                    <h2 className="text-xl font-bold uppercase tracking-widest">Login</h2>
+                    <h2 className="text-xl font-bold uppercase tracking-widest text-[#141414]">Login</h2>
                       <button 
                         onClick={handleLogin}
-                        className="w-full bg-white border border-[#141414] py-3 rounded-sm font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-[#141414]/5 transition-all"
+                        className="w-full bg-white border-2 border-[#141414] py-3 rounded-sm font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-[#141414]/5 transition-all cursor-pointer"
                       >
                         <LogIn className="w-4 h-4" />
                         Sign in with Google
                       </button>
-                    <p className="text-[10px] opacity-60">
-                      By signing up, you accept our <button className="underline font-bold" onClick={() => setShowTermsModal(true)}>terms and conditions</button>.
+                    <p className="text-xs text-neutral-700">
+                      By signing up, you accept our <button className="underline font-bold text-neutral-900 cursor-pointer" onClick={() => setShowTermsModal(true)}>terms and conditions</button>.
                     </p>
                   </div>
                 </motion.div>
@@ -2156,11 +2250,11 @@ export default function App() {
                   exit={{ scale: 0.95 }}
                 className="bg-[#E4E3E0] border-2 border-[#141414] w-full max-w-sm rounded-sm p-6 shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] relative"
                 >
-                  <h2 className="text-xl font-bold uppercase tracking-widest mb-4">Terms and Conditions</h2>
-                  <div className="text-[10px] opacity-60 text-left space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar border border-[#141414]/10 p-2 rounded-sm mb-4" style={{scrollbarWidth: 'thin'}}>
-                    <p className="font-bold">Terms and Conditions for ClipCloud</p>
-                    <p>Welcome to ClipCloud. By using our service, you agree to the following terms.</p>
-                    <p>1. Service Usage: ClipCloud provides temporary storage for text and files. We are not responsible for the loss of data.</p>
+                  <h2 className="text-xl font-bold uppercase tracking-widest mb-4 text-[#141414]">Terms and Conditions</h2>
+                  <div className="text-xs text-neutral-700 text-left space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar border border-[#141414]/15 p-3 rounded-sm mb-4" style={{scrollbarWidth: 'thin'}}>
+                    <p className="font-bold text-neutral-900">Terms and Conditions for Sendarro</p>
+                    <p>Welcome to Sendarro. By using our service, you agree to the following terms.</p>
+                    <p>1. Service Usage: Sendarro provides temporary storage for text and files. We are not responsible for the loss of data.</p>
                     <p>2. Data Privacy: Your clips are temporary. Pro Max users get extra protection but data is still transient.</p>
                     <p>3. Acceptable Use: You agree not to upload illegal, copyrighted, or malicious content.</p>
                     <p>4. Pro Accounts: Subscription fees are non-refundable. Features are subject to change.</p>
@@ -2168,7 +2262,7 @@ export default function App() {
                   </div>
                   <button 
                     onClick={() => setShowTermsModal(false)}
-                    className="w-full bg-[#141414] text-[#E4E3E0] py-2 rounded-sm font-bold uppercase tracking-widest text-xs hover:opacity-90 transition-all"
+                    className="w-full bg-[#141414] text-[#E4E3E0] py-2.5 rounded-sm font-bold uppercase tracking-widest text-xs hover:opacity-90 transition-all cursor-pointer"
                   >
                     Close
                   </button>
@@ -2178,7 +2272,22 @@ export default function App() {
           </AnimatePresence>
 
 
-      <main className="max-w-2xl mx-auto p-4 sm:p-6 lg:px-8 pt-24 sm:pt-32 lg:pt-40">
+      {currentView === 'product' ? (
+        <ProductPage 
+          onBackToApp={() => setCurrentView('app')} 
+          onNavigateToPricing={() => setCurrentView('pricing')} 
+          onOpenAuth={() => setShowLoginModal(true)} 
+        />
+      ) : currentView === 'pricing' ? (
+        <PricingPage 
+          onBackToApp={() => setCurrentView('app')} 
+          onNavigateToProduct={() => setCurrentView('product')} 
+          onUpgrade={handleCheckout} 
+          onRestorePurchases={handleRestorePurchases} 
+          tier={tier} 
+        />
+      ) : (
+        <main className="w-full max-w-md mx-auto sm:ml-8 lg:ml-16 sm:mr-auto p-4 sm:p-4 lg:px-6 pt-6 sm:pt-16">
         {/* API Blocked Warning */}
         <AnimatePresence>
           {isApiBlocked && (
@@ -2202,532 +2311,555 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Tab Navigation */}
-        <div className="flex border border-[#141414] mb-6 sm:mb-8 overflow-hidden rounded-sm w-full">
-          <button 
-            onClick={() => { setActiveTab('share'); setStatus({ type: 'idle', message: '' }); }}
-            className={`flex-1 py-3 sm:py-4 text-[10px] sm:text-sm font-bold uppercase tracking-widest transition-colors ${activeTab === 'share' ? 'bg-[#141414] text-[#E4E3E0]' : 'hover:bg-[#141414]/5'}`}
-          >
-            Share
-          </button>
-          <button 
-            onClick={() => { setActiveTab('get'); setStatus({ type: 'idle', message: '' }); }}
-            className={`flex-1 py-3 sm:py-4 text-[10px] sm:text-sm font-bold uppercase tracking-widest transition-colors ${activeTab === 'get' ? 'bg-[#141414] text-[#E4E3E0]' : 'hover:bg-[#141414]/5'}`}
-          >
-            Get
-          </button>
-          {isProMax && (
+
+
+        {/* Main Workspace */}
+        <div className="w-full max-w-full space-y-5">
+          {/* Mobile Only Tab Toggle Bar (SHARE / GET) - Exact match to screenshot */}
+          <div className="flex sm:hidden border border-[#141414] bg-[#E4E3E0] rounded-sm overflow-hidden mb-5">
             <button 
-              onClick={() => { setActiveTab('vault'); setStatus({ type: 'idle', message: '' }); }}
-              className={`flex-1 py-3 sm:py-4 text-[10px] sm:text-sm font-bold uppercase tracking-widest transition-colors ${activeTab === 'vault' ? 'bg-blue-600 text-white' : 'hover:bg-blue-600/5'}`}
+              onClick={() => setActiveTab('share')}
+              className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer ${
+                activeTab === 'share' 
+                  ? 'bg-[#141414] text-[#E4E3E0]' 
+                  : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
+              }`}
             >
-              Vault
+              SHARE
             </button>
-          )}
-        </div>
+            <button 
+              onClick={() => setActiveTab('get')}
+              className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer border-l border-[#141414] ${
+                activeTab === 'get' 
+                  ? 'bg-[#141414] text-[#E4E3E0]' 
+                  : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
+              }`}
+            >
+              GET
+            </button>
+          </div>
 
-        {/* Content Area */}
-        <div className="bg-white border border-[#141414] p-4 sm:p-8 pb-24 sm:pb-32 min-h-[300px] flex flex-col relative w-full max-w-full overflow-hidden">
-          <AnimatePresence mode="wait">
-            {activeTab === 'share' ? (
-              <motion.div 
-                key="share-tab"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-6 sm:space-y-8 text-center"
-              >
-                {!code ? (
-                  <>
-                    <div className="space-y-4">
-                      <h2 className="text-lg sm:text-3xl font-serif italic">Share a clip</h2>
-                      <p className="text-[9px] sm:text-sm opacity-60 max-w-[200px] sm:max-w-xs mx-auto">
-                        {isProMax 
-                          ? "Share text, files, or both with your elite Pro Max tools." 
-                          : "Paste your content below to generate a temporary code."}
-                      </p>
-                    </div>
+          {/* SEND BOX */}
+          <div className={`SendBox bg-white border border-[#141414] p-5 sm:p-6 rounded-none sm:rounded-md shadow-none sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] relative overflow-hidden ${activeTab === 'share' ? 'block' : 'hidden sm:block'}`}>
+            {!code ? (
+              <>
+                {/* Desktop Initial Clickzone (when not expanded on desktop) */}
+                <div className="hidden sm:block">
+                  {(!isSendExpanded && selectedFiles.length === 0 && !manualText.trim()) && (
+                    <div 
+                      onClick={() => {
+                        setIsSendExpanded(true);
+                        if (shareMode === 'file' || shareMode === 'collection') {
+                          const fileInput = document.getElementById('send-clickzone-file-input') as HTMLInputElement;
+                          if (fileInput) fileInput.click();
+                        }
+                      }}
+                      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                          setShareMode('file');
+                          setIsSendExpanded(true);
+                          addIncomingFiles(Array.from(e.dataTransfer.files));
+                        }
+                      }}
+                      className={`border-2 border-dashed rounded-md p-5 sm:p-7 text-center cursor-pointer transition-all bg-[#F9F9F8] hover:bg-neutral-100 group relative overflow-hidden shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] ${
+                        isDragging ? 'border-[#141414] bg-neutral-200 scale-[1.01]' : 'border-[#141414]/40'
+                      }`}
+                    >
+                      <input 
+                        type="file" 
+                        id="send-clickzone-file-input"
+                        multiple 
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            setShareMode('file');
+                            setIsSendExpanded(true);
+                            addIncomingFiles(Array.from(e.target.files));
+                            e.target.value = '';
+                          }
+                        }}
+                        className="hidden" 
+                      />
 
-                    <div className="flex border-b border-[#141414]/10 mb-4">
-                        <button 
-                          onClick={() => setShareMode('text')}
-                          className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-all ${shareMode === 'text' ? 'border-b-2 border-[#141414] opacity-100' : 'opacity-30 hover:opacity-50'}`}
-                        >
-                          Text Clip
-                        </button>
-                        <button 
-                          onClick={() => setShareMode('file')}
-                          className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-all ${shareMode === 'file' ? 'border-b-2 border-[#141414] opacity-100' : 'opacity-30 hover:opacity-50'}`}
-                        >
-                          File Clip
-                        </button>
-                        {isProMax && (
-                          <button 
-                            onClick={() => setShareMode('collection')}
-                            className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-1 ${shareMode === 'collection' ? 'border-b-2 border-blue-600 text-blue-600 opacity-100' : 'opacity-60 hover:opacity-100 text-blue-600'}`}
-                          >
-                            <Zap className="w-3 h-3 fill-blue-600" />
-                            Collection Box
-                          </button>
-                        )}
-                      </div>
-
-                    <div className="space-y-4">
-                      <div className="relative">
-                        {(shareMode === 'collection') && (
-                          <motion.div
-                            initial={{ opacity: 0, x: 10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className="py-2 space-y-4 text-left"
-                          >
-                            <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-sm space-y-2">
-                              <div className="flex items-center gap-2 text-blue-700 font-bold text-xs uppercase tracking-wider">
-                                <Zap className="w-4 h-4 fill-blue-600" />
-                                <span>Pro Max Collection Drop Box</span>
-                              </div>
-                              <p className="text-[11px] text-blue-900/80 leading-relaxed font-mono">
-                                Create a master code where 100+ students, clients, or teammates can upload files into your central inbox.
-                              </p>
-                            </div>
-
-                            <div>
-                              <label className="text-[10px] uppercase tracking-widest font-bold opacity-60 block mb-1">Collection Title / Instructions</label>
-                              <input
-                                type="text"
-                                placeholder="e.g. MATH 101 Homework Submissions"
-                                value={manualText}
-                                onChange={(e) => setManualText(e.target.value)}
-                                className="w-full p-3 border border-[#141414] rounded-sm font-mono text-sm focus:outline-none bg-[#F9F9F8]"
-                              />
-                            </div>
-                          </motion.div>
-                        )}
-
-                        {(shareMode === 'text') && (
-                          <motion.div
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                          >
-                            <textarea
-                              value={manualText}
-                              maxLength={isPro ? 100000 : 10000}
-                              onChange={(e) => {
-                                const maxChars = isPro ? 100000 : 10000;
-                                setManualText(e.target.value);
-                                if (e.target.value.length >= maxChars) {
-                                  setStatus({ type: 'error', message: `Character limit reached (${maxChars.toLocaleString()}). ${!isPro ? 'Upgrade to Pro for 100k.' : ''}` });
-                                }
-                              }}
-                              placeholder="Paste your content here..."
-                              className="w-full h-40 p-4 border border-[#141414] rounded-sm font-mono text-sm focus:outline-none focus:ring-1 focus:ring-[#141414]/20 resize-none bg-[#F9F9F8]"
-                            />
-                            <div className={`absolute bottom-3 left-3 text-[10px] font-mono transition-colors ${
-                              manualText.length >= (isPro ? 100000 : 10000) ? 'text-red-500 font-bold' : 'opacity-30'
-                            }`}>
-                              {manualText.length.toLocaleString()} / {(isPro ? 100000 : 10000).toLocaleString()}
-                            </div>
-                          </motion.div>
-                        )}
-                        
-                        {(shareMode === 'file') && (
-                          <motion.div
-                            initial={{ opacity: 0, x: 10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className="py-2 space-y-4"
-                          >
-                            <input 
-                              type="file" 
-                              id="file-upload" 
-                              multiple
-                              className="hidden" 
-                              onChange={handleFileSelect}
-                            />
-                            
-                            {selectedFiles.length > 0 && (
-                              <div className="space-y-2 text-left">
-                                <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-[#141414]/70">
-                                  <span>Attached Files ({selectedFiles.length})</span>
-                                  <span className={`font-mono text-[10px] ${selectedFiles.reduce((acc, f) => acc + f.size, 0) > (isProMax ? 50 : 10) * 1024 * 1024 ? 'text-red-600 font-bold' : ''}`}>
-                                    {(selectedFiles.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024)).toFixed(2)} MB / {isProMax ? 50 : 10} MB
-                                  </span>
-                                </div>
-
-                                {selectedFiles.reduce((acc, f) => acc + f.size, 0) > (isProMax ? 50 : 10) * 1024 * 1024 && (
-                                  <div className="p-2.5 bg-red-100 border border-red-300 rounded-sm text-red-700 text-[10px] font-bold flex items-center gap-2">
-                                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
-                                    <span>Exceeds {isProMax ? '50MB' : '10MB'} limit! Please remove some files before generating code.</span>
-                                  </div>
-                                )}
-                                
-                                <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                                  {selectedFiles.map((file, idx) => (
-                                    <div key={idx} className="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-200 rounded-sm shadow-sm">
-                                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                                        <div className="w-8 h-8 bg-blue-100 rounded-sm flex items-center justify-center shrink-0">
-                                          <FileText className="w-4 h-4 text-blue-600" />
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                          <div className="text-xs font-bold truncate text-[#141414]">{file.name}</div>
-                                          <div className="text-[9px] font-mono opacity-50">{(file.size / 1024).toFixed(1)} KB</div>
-                                        </div>
-                                      </div>
-                                      <button 
-                                        type="button"
-                                        onClick={() => removeFile(idx)}
-                                        className="p-1 hover:bg-red-100 text-red-600 rounded-sm transition-colors ml-2 shrink-0"
-                                        title="Remove file"
-                                      >
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            <label 
-                              htmlFor="file-upload"
-                              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                              onDragLeave={() => setIsDragging(false)}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                setIsDragging(false);
-                                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                                  const dropped = Array.from(e.dataTransfer.files) as File[];
-                                  addIncomingFiles(dropped);
-                                }
-                              }}
-                              className={`w-full min-h-[140px] p-6 border-2 border-dashed rounded-sm flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 relative overflow-hidden ${
-                                isDragging 
-                                  ? 'bg-blue-50 border-blue-500 scale-[1.01] shadow-xl' 
-                                  : 'bg-[#141414]/5 border-[#141414]/20 hover:border-[#141414]/40 hover:bg-[#141414]/10'
-                              }`}
-                            >
-                              <div className="flex flex-col items-center gap-2 text-center">
-                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isDragging ? 'bg-blue-100 text-blue-600' : 'bg-[#141414]/5'}`}>
-                                  <Upload className="w-6 h-6 opacity-40" />
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">
-                                    {selectedFiles.length > 0 ? '+ Add More' : 'Select files from device'}
-                                  </div>
-                                  <div className="text-[9px] opacity-50 font-medium">
-                                    Drag & drop multiple files or click to browse
-                                    <br />
-                                    <span className="text-[8px] opacity-70">MAX {isProMax ? '50MB' : '10MB'} • PDF, ZIP, IMAGES, VIDEOS</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </label>
-
-                            <div className="flex items-center justify-center my-2">
-                                <span className="text-[10px] uppercase tracking-widest font-bold opacity-30">or</span>
-                            </div>
-                            
-                            <div className="flex items-center justify-center gap-3.5 sm:gap-4">
-                                <span className="text-sm sm:text-base font-serif italic opacity-70">Share from</span>
-                                <button 
-                                  onClick={() => { if (!user || isGuest) { setShowLoginModal(true); } else { setActiveIntegration('drive'); } }}
-                                  className="w-12 h-12 sm:w-13 sm:h-13 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:border-[#141414]/50" 
-                                  title="Google Drive">
-                                    <GoogleDriveIcon className="w-7 h-7" />
-                                </button>
-                                <button 
-                                  onClick={() => { if (!user || isGuest) { setShowLoginModal(true); } else { setActiveIntegration('dropbox'); } }}
-                                  className="w-12 h-12 sm:w-13 sm:h-13 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:border-[#141414]/50" 
-                                  title="Dropbox">
-                                    <DropboxIcon className="w-7 h-7" />
-                                </button>
-                                <button 
-                                  onClick={() => { if (!user || isGuest) { setShowLoginModal(true); } else { setActiveIntegration('icloud'); } }}
-                                  className="w-12 h-12 sm:w-13 sm:h-13 rounded-full border border-[#141414]/20 bg-white flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-sm hover:border-[#141414]/50" 
-                                  title="iCloud">
-                                    <ICloudIcon className="w-7.5 h-7.5" />
-                                </button>
-                            </div>
-                          </motion.div>
-                        )}
-                      </div>                          
-                      
-                      {isPro && (
-                        <div className="bg-[#141414]/5 p-4 rounded-sm space-y-4 text-left border border-[#141414]/10">
-                          <button 
-                            type="button"
-                            onClick={() => setShowCustomCodeDropdown(!showCustomCodeDropdown)}
-                            className="flex justify-between w-full font-bold opacity-50 uppercase text-[10px] tracking-widest"
-                          >
-                            <span>Pro Features (Custom Alias & Expiration)</span>
-                            <span>{showCustomCodeDropdown ? '▲' : '▼'}</span>
-                          </button>
-                          {showCustomCodeDropdown && (
-                            <div className="space-y-3 pt-1">
-                              <div className="space-y-1">
-                                <label className="text-[10px] uppercase tracking-widest font-bold opacity-50">Custom Alias Code</label>
-                                <input 
-                                  type="text"
-                                  value={customCodeInput}
-                                  onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
-                                  placeholder="MY-CUSTOM-CLIP"
-                                  className="w-full p-2 border border-[#141414] rounded-sm font-mono text-sm focus:outline-none"
-                                />
-                              </div>
-                              
-                              <div className="space-y-1">
-                                <label className="text-[10px] uppercase tracking-widest font-bold opacity-50">Expiration Time</label>
-                                <div className="flex gap-2">
-                                  {[
-                                    { label: '15m', value: 900 },
-                                    { label: '30m', value: 1800 },
-                                    { label: '1h', value: 3600 },
-                                    { label: '24h', value: 86400 }
-                                  ].map((opt) => (
-                                    <button
-                                      key={opt.value}
-                                      type="button"
-                                      onClick={() => setExpirationOption(opt.value)}
-                                      className={`flex-1 py-2 text-[10px] uppercase font-bold border rounded-sm transition-all ${
-                                        expirationOption === opt.value 
-                                          ? 'bg-[#141414] text-[#E4E3E0] border-[#141414]' 
-                                          : 'bg-white border-[#141414]/20 hover:border-[#141414]'
-                                      }`}
-                                    >
-                                      {opt.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between pt-2">
-                                <div className="flex flex-col">
-                                  <label className="text-[10px] uppercase tracking-widest font-bold opacity-50">Burn on Read</label>
-                                  <span className="text-[8px] opacity-40">Self-destruct after first retrieval</span>
-                                </div>
-                                <button 
-                                  type="button"
-                                  onClick={() => setBurnOnRead(!burnOnRead)}
-                                  className={`w-10 h-5 rounded-full relative transition-colors ${burnOnRead ? 'bg-red-500' : 'bg-[#141414]/20'}`}
-                                >
-                                  <motion.div 
-                                    animate={{ x: burnOnRead ? 20 : 2 }}
-                                    className="absolute top-1 left-0 w-3 h-3 bg-white rounded-full shadow-sm"
-                                  />
-                                </button>
-                              </div>
-                            </div>
-                          )}
+                      <div className="space-y-2 pointer-events-none">
+                        <div className="w-11 h-11 sm:w-13 sm:h-13 bg-[#141414] text-[#E4E3E0] rounded-full mx-auto flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,0.3)] group-hover:scale-105 transition-transform">
+                          <span className="text-xl sm:text-2xl font-light">+</span>
                         </div>
-                      )}
-
-
-
-                      <div className="flex items-center justify-center gap-1.5 text-[10px] font-mono opacity-50 pt-2">
-                        <Clock className="w-3 h-3" />
-                        <span>Code expires in {formatTime(isPro ? expirationOption : (selectedFiles.length > 0 || shareMode === 'file' ? FILE_EXPIRATION_SECONDS : EXPIRATION_SECONDS))}</span>
+                        <div className="space-y-0.5">
+                          <p className="text-xl sm:text-2xl font-serif italic font-bold tracking-tight text-[#141414]">Send</p>
+                          <p className="text-[10px] sm:text-[11px] uppercase tracking-wider font-mono text-neutral-500 font-semibold">
+                            Click to attach files, text, or drop here
+                          </p>
+                        </div>
                       </div>
+                    </div>
+                  )}
+                </div>
 
+                {/* Main Sharing Workspace Form: Always shown on mobile, and shown on desktop when expanded */}
+                <div className={`${(!isSendExpanded && selectedFiles.length === 0 && !manualText.trim()) ? 'block sm:hidden' : 'block'} space-y-5 text-center`}>
+                  {/* Title & Subtitle matching Screenshot */}
+                  <div className="space-y-2 pt-2">
+                    <h2 className="text-2xl sm:text-3xl font-serif italic font-normal text-[#141414]">Share a clip</h2>
+                    <p className="text-xs text-neutral-600 max-w-xs mx-auto leading-relaxed">
+                      Paste your content below to generate a temporary code.
+                    </p>
+                  </div>
+
+                  {/* Mode Tabs: TEXT CLIP / FILE CLIP / COLLECTION (for Pro Max) */}
+                  <div className="flex border-b border-[#141414]/20 pt-1">
+                    <button 
+                      onClick={() => setShareMode('text')}
+                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                        shareMode === 'text' 
+                          ? 'border-b-2 border-[#141414] text-[#141414]' 
+                          : 'text-neutral-400 hover:text-neutral-700'
+                      }`}
+                    >
+                      TEXT CLIP
+                    </button>
+                    <button 
+                      onClick={() => setShareMode('file')}
+                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                        shareMode === 'file' 
+                          ? 'border-b-2 border-[#141414] text-[#141414]' 
+                          : 'text-neutral-400 hover:text-neutral-700'
+                      }`}
+                    >
+                      FILE CLIP {selectedFiles.length > 0 && `(${selectedFiles.length})`}
+                    </button>
+                    {isProMax && (
                       <button 
-                        onClick={handleShare}
-                        disabled={status.type === 'loading' || (!manualText.trim() && selectedFiles.length === 0)}
-                        className="w-full bg-[#141414] text-[#E4E3E0] py-4 sm:py-6 rounded-sm font-bold uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                        onClick={() => setShareMode('collection')}
+                        className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          shareMode === 'collection' 
+                            ? 'border-b-2 border-blue-600 text-blue-700' 
+                            : 'text-blue-500 hover:text-blue-800'
+                        }`}
                       >
-                        {status.type === 'loading' ? <RefreshCw className="animate-spin w-5 h-5" /> : <Share2 className="w-5 h-5" />}
-                        Generate Code
+                        <Zap className="w-3.5 h-3.5 fill-blue-600" />
+                        COLLECTION
                       </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-8">
-                    <div className="flex flex-col md:flex-row items-center justify-center gap-8 py-4">
-                      <div className="space-y-4 text-center md:text-left">
-                        <div className="text-[10px] uppercase tracking-widest opacity-50 font-mono">Your Code</div>
-                        <div className="flex items-center justify-center md:justify-start gap-4">
-                          <div className="text-4xl sm:text-6xl font-bold tracking-tighter font-mono">{code}</div>
-                          <button 
-                            onClick={() => handleCopyCode(code)}
-                            className={`p-3 rounded-sm transition-all ${
-                              copyCodeSuccess 
-                                ? 'bg-emerald-500 text-white' 
-                                : 'bg-[#141414] text-[#E4E3E0] hover:scale-110'
-                            }`}
-                            title="Copy code to clipboard"
-                          >
-                            {copyCodeSuccess ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-                          </button>
+                    )}
+                  </div>
+
+                  {/* Content Inputs */}
+                  <div className="space-y-4 text-left">
+                    {shareMode === 'text' && (
+                      <div className="relative">
+                        <textarea
+                          value={manualText}
+                          maxLength={isPro ? 100000 : 10000}
+                          onChange={(e) => {
+                            const maxChars = isPro ? 100000 : 10000;
+                            setManualText(e.target.value);
+                            if (e.target.value.length >= maxChars) {
+                              setStatus({ type: 'error', message: `Character limit reached (${maxChars.toLocaleString()}). ${!isPro ? 'Upgrade to Pro for 100k.' : ''}` });
+                            }
+                          }}
+                          placeholder="Paste your content here..."
+                          className="w-full h-56 sm:h-52 p-4 border border-[#141414] rounded-sm font-mono text-sm placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-[#141414] resize-none bg-white"
+                        />
+                        <div className="absolute bottom-3 left-4 text-[11px] font-mono text-neutral-400">
+                          {manualText.length.toLocaleString()} / {(isPro ? 100000 : 10000).toLocaleString()}
                         </div>
                       </div>
+                    )}
 
-                      <div className="relative group">
-                        <div className="absolute -inset-1 bg-[#141414] rounded-sm blur opacity-10 group-hover:opacity-20 transition duration-1000 group-hover:duration-200"></div>
-                        <div className="relative p-4 bg-white border-2 border-[#141414] rounded-sm shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] transition-all">
-                          <QRCodeSVG 
-                            value={`${window.location.origin}/?code=${code}`} 
-                            size={140} 
-                            level="H" 
-                            includeMargin={false}
-                            className="w-full h-full"
-                          />
-                          <div className="absolute -top-2 -right-2 bg-[#141414] text-[#E4E3E0] p-1 rounded-sm">
-                            <QrCode className="w-3 h-3" />
+                    {shareMode === 'file' && (
+                      <div className="space-y-3">
+                        <input 
+                          type="file" 
+                          id="file-upload" 
+                          multiple
+                          className="hidden" 
+                          onChange={handleFileSelect}
+                        />
+
+                        {selectedFiles.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider text-neutral-800 font-mono">
+                              <span>Attached Files ({selectedFiles.length})</span>
+                              <span className={`text-xs ${selectedFiles.reduce((acc, f) => acc + f.size, 0) > (isProMax ? 50 : 10) * 1024 * 1024 ? 'text-red-600 font-bold' : 'text-neutral-600'}`}>
+                                {(selectedFiles.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024)).toFixed(2)} MB / {isProMax ? 50 : 10} MB
+                              </span>
+                            </div>
+
+                            <div className="max-h-40 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                              {selectedFiles.map((file, idx) => (
+                                <div key={idx} className="flex items-center justify-between p-2.5 bg-blue-50/70 border border-blue-200 rounded-sm">
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                                    <div className="min-w-0 flex-1 truncate text-xs font-mono text-[#141414]">{file.name}</div>
+                                  </div>
+                                  <button 
+                                    type="button"
+                                    onClick={() => removeFile(idx)}
+                                    className="p-1 hover:bg-red-100 text-red-600 rounded-sm transition-colors ml-2 shrink-0 cursor-pointer"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <label 
+                          htmlFor="file-upload"
+                          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                          onDragLeave={() => setIsDragging(false)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDragging(false);
+                            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                              const dropped = Array.from(e.dataTransfer.files) as File[];
+                              addIncomingFiles(dropped);
+                            }
+                          }}
+                          className={`w-full min-h-[140px] p-6 border-2 border-dashed border-[#141414]/30 rounded-sm flex flex-col items-center justify-center gap-2.5 cursor-pointer transition-all hover:bg-neutral-50 ${
+                            isDragging ? 'bg-blue-50 border-blue-500' : 'bg-white'
+                          }`}
+                        >
+                          <Upload className="w-6 h-6 text-neutral-600" />
+                          <div className="text-center space-y-1">
+                            <p className="text-xs font-bold uppercase tracking-wider text-[#141414] font-mono">
+                              {selectedFiles.length > 0 ? '+ Add More Files' : 'Select files from device'}
+                            </p>
+                            <p className="text-[10px] text-neutral-500 font-mono">
+                              MAX {isProMax ? '50MB' : '10MB'} • ALL FILE TYPES
+                            </p>
+                          </div>
+                        </label>
+
+                        {/* Cloud Storage Integration Buttons */}
+                        <div className="pt-3 border-t border-[#141414]/15 space-y-2">
+                          <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 text-center">Or share from cloud storage</p>
+                          <div className="flex gap-2">
+                            <button 
+                              type="button" 
+                              onClick={() => setActiveIntegration('drive')} 
+                              className="flex-1 py-2 px-2.5 border border-[#141414] rounded-sm bg-white hover:bg-neutral-100 flex items-center justify-center gap-2 text-[11px] font-mono font-bold transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                            >
+                              <GoogleDriveIcon className="w-4 h-4" />
+                              <span>Drive</span>
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => setActiveIntegration('dropbox')} 
+                              className="flex-1 py-2 px-2.5 border border-[#141414] rounded-sm bg-white hover:bg-neutral-100 flex items-center justify-center gap-2 text-[11px] font-mono font-bold transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                            >
+                              <DropboxIcon className="w-4 h-4" />
+                              <span>Dropbox</span>
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => setActiveIntegration('icloud')} 
+                              className="flex-1 py-2 px-2.5 border border-[#141414] rounded-sm bg-white hover:bg-neutral-100 flex items-center justify-center gap-2 text-[11px] font-mono font-bold transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                            >
+                              <ICloudIcon className="w-4 h-4" />
+                              <span>iCloud</span>
+                            </button>
                           </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="flex items-center justify-center gap-2 text-[#141414]/60">
-                        <Clock className="w-4 h-4" />
-                        <span className="text-sm font-mono uppercase tracking-widest">Expires in {formatTime(timeLeft)}</span>
+                    )}
+
+                    {shareMode === 'collection' && isProMax && (
+                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-sm space-y-3">
+                        <div className="flex items-center gap-2 text-blue-800 font-bold text-xs uppercase tracking-wider font-mono">
+                          <Zap className="w-4 h-4 fill-blue-600 text-blue-600" />
+                          <span>Pro Max Collection Box</span>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Collection Title or Instructions"
+                          value={manualText}
+                          onChange={(e) => setManualText(e.target.value)}
+                          className="w-full p-3 border border-[#141414] rounded-sm font-mono text-xs bg-white"
+                        />
                       </div>
+                    )}
 
-                      <button 
-                        onClick={() => {
-                          const url = `${window.location.origin}/?code=${code}`;
-                          navigator.clipboard.writeText(url);
-                          setStatus({ type: 'success', message: 'Direct link copied!' });
-                        }}
-                        className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold bg-blue-50 text-blue-600 px-4 py-2 rounded-sm hover:bg-blue-100 transition-colors"
-                      >
-                        <Share2 className="w-3 h-3" />
-                        Copy Direct Link
-                      </button>
-                    </div>
-
-                    <div className="p-4 bg-[#E4E3E0]/50 border border-[#141414]/10 rounded-sm text-xs font-mono break-all line-clamp-3 opacity-60 italic">
-                      "Content ready for retrieval"
-                    </div>
-
-                    <button 
-                      onClick={() => setCode(null)}
-                      className="text-[10px] uppercase tracking-widest font-bold border-b border-[#141414] pb-1 hover:opacity-50 transition-opacity"
-                    >
-                      Cancel / Share New
-                    </button>
-                  </div>
-                )}
-              </motion.div>
-            ) : activeTab === 'get' ? (
-              <motion.div 
-                key="get-tab"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-6 sm:space-y-8"
-              >
-                <div className="space-y-4 text-center">
-                  <h2 className="text-lg sm:text-3xl font-serif italic">Retrieve a clip</h2>
-                  <p className="text-[9px] sm:text-sm opacity-60 max-w-[200px] sm:max-w-xs mx-auto">
-                    Enter the code from your other device to fetch and copy the content.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="relative flex items-center">
-                    <input 
-                      type="text"
-                      maxLength={20}
-                      placeholder="CODE"
-                      value={inputCode}
-                      onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
-                      className="w-full text-center text-xl sm:text-4xl font-bold font-mono py-4 sm:py-6 border-b-2 border-[#141414] focus:outline-none placeholder:opacity-10 pr-10"
-                    />
-                    {inputCode && (
-                      <button 
-                        type="button"
-                        onClick={() => { setInputCode(''); setStatus({ type: 'idle', message: '' }); }}
-                        className="absolute right-2 p-2 hover:bg-[#141414]/10 rounded-full text-[#141414] transition-colors"
-                        title="Clear Code"
-                      >
-                        <X className="w-6 h-6" />
-                      </button>
+                    {isPro && (
+                      <div className="bg-[#141414]/5 p-3 rounded-sm space-y-3 text-left border border-[#141414]/15">
+                        <button 
+                          type="button"
+                          onClick={() => setShowCustomCodeDropdown(!showCustomCodeDropdown)}
+                          className="flex justify-between w-full font-bold text-neutral-700 hover:text-neutral-950 uppercase text-[11px] tracking-wider cursor-pointer font-mono"
+                        >
+                          <span>Pro Features (Alias & Expiration)</span>
+                          <span>{showCustomCodeDropdown ? '▲' : '▼'}</span>
+                        </button>
+                        {showCustomCodeDropdown && (
+                          <div className="space-y-3 pt-1">
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider font-bold text-neutral-700 font-mono">Custom Alias Code</label>
+                              <input 
+                                type="text"
+                                value={customCodeInput}
+                                onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
+                                placeholder="MY-CUSTOM-CLIP"
+                                className="w-full p-2 border border-[#141414] rounded-sm font-mono text-xs bg-white"
+                              />
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider font-bold text-neutral-700 font-mono">Expiration Time</label>
+                              <div className="flex gap-2">
+                                {[
+                                  { label: '15m', value: 900 },
+                                  { label: '30m', value: 1800 },
+                                  { label: '1h', value: 3600 },
+                                  { label: '24h', value: 86400 }
+                                ].map((opt) => (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => setExpirationOption(opt.value)}
+                                    className={`flex-1 py-1.5 text-[10px] font-mono uppercase font-bold border rounded-sm transition-all cursor-pointer ${
+                                      expirationOption === opt.value 
+                                        ? 'bg-[#141414] text-[#E4E3E0] border-[#141414]' 
+                                        : 'bg-white text-neutral-700 border-[#141414]/25 hover:border-[#141414]'
+                                    }`}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
-                  {Object.values(reactivatingClips).some((v: number) => v > 0) && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="flex items-center justify-center gap-2 text-blue-600 font-mono text-xs uppercase tracking-widest"
-                    >
-                      <Clock className="w-3 h-3 animate-pulse" />
-                      <span>Reactivated clip is currently active in Vault</span>
-                    </motion.div>
-                  )}
-                  
+                  {/* Expiration text matching screenshot */}
+                  <div className="flex items-center justify-center gap-1.5 text-xs font-mono text-neutral-500 pt-1">
+                    <Clock className="w-3.5 h-3.5 text-neutral-500" />
+                    <span>Code expires in {formatTime(isPro ? expirationOption : (selectedFiles.length > 0 || shareMode === 'file' ? FILE_EXPIRATION_SECONDS : EXPIRATION_SECONDS))}</span>
+                  </div>
+
+                  {/* Generate Code button matching screenshot */}
                   <button 
-                    onClick={handleGet}
-                    disabled={status.type === 'loading' || inputCode.length < 3}
-                    className="w-full bg-[#141414] text-[#E4E3E0] py-4 sm:py-6 rounded-sm font-bold uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                    onClick={handleShare}
+                    disabled={status.type === 'loading' || (!manualText.trim() && selectedFiles.length === 0)}
+                    className="w-full bg-[#737373] hover:bg-[#525252] text-white py-4 rounded-sm font-mono font-bold uppercase tracking-[0.15em] text-sm transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 cursor-pointer"
                   >
-                    {status.type === 'loading' ? <RefreshCw className="animate-spin w-5 h-5" /> : <Download className="w-5 h-5" />}
-                    Get Clip
+                    {status.type === 'loading' ? <RefreshCw className="animate-spin w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+                    <span>GENERATE CODE</span>
                   </button>
 
-                  {/* Scanner */}
-                  {!retrievedClip && (
+                  {/* Desktop close options button */}
+                  <div className="hidden sm:block pt-1">
                     <button 
-                      onClick={() => setShowScannerModal(true)}
-                      className="w-full border-2 border-[#141414] text-[#141414] py-4 rounded-sm font-bold uppercase tracking-[0.2em] hover:bg-[#141414]/5 transition-colors flex items-center justify-center gap-2"
+                      onClick={() => {
+                        setSelectedFiles([]);
+                        setManualText('');
+                        setIsSendExpanded(false);
+                      }}
+                      className="text-xs text-neutral-500 hover:text-neutral-900 font-mono underline cursor-pointer"
                     >
-                      <Camera className="w-5 h-5" />
-                      Scan QR Code
+                      Cancel / Close
                     </button>
-                  )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Generated Code View */
+              <div className="space-y-8 text-center">
+                <div className="flex flex-col md:flex-row items-center justify-center gap-8 py-4">
+                  <div className="space-y-4 text-center md:text-left">
+                    <div className="text-xs uppercase tracking-wider font-bold text-neutral-700 font-mono">Your Key Code</div>
+                    <div className="flex items-center justify-center md:justify-start gap-4">
+                      <div className="text-4xl sm:text-6xl font-bold tracking-tighter font-mono text-[#141414]">{code}</div>
+                      <button 
+                        onClick={() => handleCopyCode(code)}
+                        className={`p-3 rounded-sm transition-all cursor-pointer ${
+                          copyCodeSuccess 
+                            ? 'bg-emerald-500 text-white' 
+                            : 'bg-[#141414] text-[#E4E3E0] hover:scale-110'
+                        }`}
+                        title="Copy code to clipboard"
+                      >
+                        {copyCodeSuccess ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute -inset-1 bg-[#141414] rounded-sm blur opacity-10 group-hover:opacity-20 transition duration-1000 group-hover:duration-200"></div>
+                    <div className="relative p-4 bg-white border-2 border-[#141414] rounded-sm shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] transition-all">
+                      <QRCodeSVG 
+                        value={`${window.location.origin}/?code=${code}`} 
+                        size={140} 
+                        level="H" 
+                        includeMargin={false}
+                        className="w-full h-full"
+                      />
+                      <div className="absolute -top-2 -right-2 bg-[#141414] text-[#E4E3E0] p-1 rounded-sm">
+                        <QrCode className="w-3 h-3" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex flex-col items-center gap-4">
+                  <div className="flex items-center justify-center gap-2 text-neutral-700">
+                    <Clock className="w-4 h-4 text-neutral-600" />
+                    <span className="text-sm font-mono uppercase tracking-wider font-medium">Expires in {formatTime(timeLeft)}</span>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      const url = `${window.location.origin}/?code=${code}`;
+                      navigator.clipboard.writeText(url);
+                      setStatus({ type: 'success', message: 'Direct link copied!' });
+                    }}
+                    className="flex items-center gap-2 text-xs uppercase tracking-wider font-bold bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2 rounded-sm hover:bg-blue-100 transition-colors cursor-pointer"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    Copy Direct Link
+                  </button>
                 </div>
 
-                {retrievedClip && (
-                  <div className="space-y-4">
-                    {/* Pill Progress Loader FIRST */}
-                    {((retrievedClip.files && retrievedClip.files.length > 0) || retrievedClip.hasFile) && (
-                      <div className="bg-white p-4 border border-[#141414]/10 rounded-md space-y-2">
-                        {/* Pill Capsule Progress Loader - Vibrant Color Styling */}
-                        <div className="relative w-full h-12 bg-blue-50 border-2 border-blue-200 rounded-full overflow-hidden flex items-center justify-between px-6 shadow-inner">
-                          <div 
-                            className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-500 transition-all duration-300 ease-out rounded-full"
-                            style={{ width: `${retrievalProgress?.percent || 0}%` }}
-                          />
-                          <span className={`relative z-10 font-bold text-xs sm:text-sm flex items-center gap-2 ${retrievalProgress?.percent && retrievalProgress.percent > 40 ? 'text-white' : 'text-blue-900'}`}>
-                            {!retrievalProgress?.isComplete && (
-                              <RefreshCw className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
-                            )}
-                            {retrievalProgress?.isComplete ? "File Link Ready" : "File Stream"}
-                          </span>
-                          <span className={`relative z-10 font-mono font-extrabold text-sm sm:text-lg ${retrievalProgress?.percent && retrievalProgress.percent > 80 ? 'text-white' : 'text-blue-900'}`}>
-                            {retrievalProgress?.percent || 0}%
-                          </span>
-                        </div>
-                        {/* Stats Row */}
-                        <div className="flex items-center justify-between text-xs sm:text-sm text-[#7C7C80] px-1 font-medium">
-                          <span>Total {retrievedClip.files?.length || 1} files</span>
-                          <span>
-                            {(!retrievalProgress || retrievalProgress.loadedBytes === 0) ? (
-                              <strong className="text-red-500 font-bold">0 B</strong>
-                            ) : (
-                              <strong className={retrievalProgress?.isComplete ? "text-emerald-600 font-bold" : "text-red-500 font-bold"}>
-                                {formatBytes(retrievalProgress.loadedBytes)}
-                              </strong>
-                            )}
-                            {" / "}
-                            {(
-                              (retrievedClip.files
-                                ? retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0)
-                                : (retrievedClip.fileSize || 0)) / (1024 * 1024)
-                            ).toFixed(2)} MB
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                <button 
+                  onClick={() => setCode(null)}
+                  className="text-xs uppercase tracking-wider font-bold border-b border-[#141414] pb-1 text-neutral-700 hover:text-neutral-950 transition-colors cursor-pointer"
+                >
+                  Cancel / Share New
+                </button>
+              </div>
+            )}
+          </div>
 
-                    {/* Clip Retrieved Box SECOND - HIDDEN UNTIL LOADER REACHES 100% */}
-                    {(!((retrievedClip.files && retrievedClip.files.length > 0) || retrievedClip.hasFile) || retrievalProgress?.isComplete) && (
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="border-2 border-[#141414] rounded-sm overflow-hidden"
-                      >
+          {/* RECEIVE BOX */}
+          <div className={`ReceiveBox bg-white border border-[#141414] p-6 sm:p-8 rounded-none sm:rounded-md shadow-none sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] relative overflow-hidden space-y-6 text-center ${activeTab === 'get' ? 'block' : 'hidden sm:block'}`}>
+            <div className="Receive">
+              <div className="Main">
+                <div className="transfer-box-inner space-y-6">
+                  <div className="receive-main-header space-y-2 text-center pt-2">
+                    <h3 className="title3 bold text-2xl sm:text-3xl font-serif italic font-normal text-[#141414]">Retrieve a clip</h3>
+                    <p className="text-xs text-neutral-600 max-w-xs mx-auto leading-relaxed">
+                      Enter the code from your other device to fetch and copy the content.
+                    </p>
+                  </div>
+                  <div className="receive-form space-y-5">
+                    <div className="relative">
+                      <input 
+                        className="border-box w-full border-b-2 border-[#141414] bg-transparent py-4 font-mono text-xl sm:text-2xl font-normal text-center uppercase placeholder:text-neutral-300 focus:outline-none focus:border-[#141414] tracking-widest" 
+                        name="value" 
+                        type="text" 
+                        placeholder="CODE" 
+                        maxLength={20}
+                        value={inputCode}
+                        onChange={(e) => setInputCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
+                      />
+                      {inputCode && (
+                        <button 
+                          type="button"
+                          onClick={() => { setInputCode(''); setStatus({ type: 'idle', message: '' }); }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-neutral-200 rounded-full text-[#141414] transition-colors cursor-pointer"
+                          title="Clear"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    <button 
+                      aria-label="Receive" 
+                      onClick={handleGet}
+                      disabled={status.type === 'loading' || inputCode.length < 3}
+                      className="IconButton receive-button regular w-full bg-[#737373] hover:bg-[#525252] text-white py-4 rounded-sm font-mono font-bold uppercase tracking-[0.15em] text-sm transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 cursor-pointer shadow-none"
+                    >
+                      {status.type === 'loading' ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          <span>GET CLIP</span>
+                        </>
+                      )}
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setShowScannerModal(true)}
+                      className="w-full border-2 border-[#141414] bg-white hover:bg-[#141414]/5 text-[#141414] py-4 rounded-sm font-mono font-bold uppercase tracking-[0.15em] text-sm transition-all flex items-center justify-center gap-2.5 cursor-pointer"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>SCAN QR CODE</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {Object.values(reactivatingClips).some((v: number) => v > 0) && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-center gap-2 text-blue-700 font-mono text-xs uppercase tracking-wider font-semibold pt-1"
+              >
+                <Clock className="w-3.5 h-3.5 animate-pulse" />
+                <span>Reactivated clip is currently active in Vault</span>
+              </motion.div>
+            )}
+
+            {retrievedClip && (
+              <div className="space-y-4 pt-4 border-t border-[#141414]/15">
+                {/* Pill Progress Loader FIRST */}
+                {((retrievedClip.files && retrievedClip.files.length > 0) || retrievedClip.hasFile) && (
+                  <div className="bg-white p-4 border border-[#141414]/15 rounded-md space-y-2">
+                    <div className="relative w-full h-12 bg-blue-50 border-2 border-blue-200 rounded-full overflow-hidden flex items-center justify-between px-6 shadow-inner">
+                      <div 
+                        className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-500 transition-all duration-300 ease-out rounded-full"
+                        style={{ width: `${retrievalProgress?.percent || 0}%` }}
+                      />
+                      <span className={`relative z-10 font-bold text-xs sm:text-sm flex items-center gap-2 ${retrievalProgress?.percent && retrievalProgress.percent > 40 ? 'text-white' : 'text-blue-900'}`}>
+                        {!retrievalProgress?.isComplete && (
+                          <RefreshCw className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
+                        )}
+                        {retrievalProgress?.isComplete ? "File Link Ready" : "File Stream"}
+                      </span>
+                      <span className={`relative z-10 font-mono font-extrabold text-sm sm:text-lg ${retrievalProgress?.percent && retrievalProgress.percent > 80 ? 'text-white' : 'text-blue-900'}`}>
+                        {retrievalProgress?.percent || 0}%
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs sm:text-sm text-neutral-700 px-1 font-medium">
+                      <span>Total {retrievedClip.files?.length || 1} files</span>
+                      <span>
+                        {(!retrievalProgress || retrievalProgress.loadedBytes === 0) ? (
+                          <strong className="text-red-600 font-bold">0 B</strong>
+                        ) : (
+                          <strong className={retrievalProgress?.isComplete ? "text-emerald-700 font-bold" : "text-red-600 font-bold"}>
+                            {formatBytes(retrievalProgress.loadedBytes)}
+                          </strong>
+                        )}
+                        {" / "}
+                        {(
+                          (retrievedClip.files
+                            ? retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0)
+                            : (retrievedClip.fileSize || 0)) / (1024 * 1024)
+                        ).toFixed(2)} MB
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Clip Retrieved Box */}
+                {(!((retrievedClip.files && retrievedClip.files.length > 0) || retrievedClip.hasFile) || retrievalProgress?.isComplete) && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="border-2 border-[#141414] rounded-sm overflow-hidden"
+                  >
                     <div className="bg-[#141414] text-[#E4E3E0] p-3.5 flex justify-between items-center gap-2">
                       <div className="flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span className="text-[10px] uppercase tracking-widest font-bold font-mono">Clip Retrieved</span>
+                        <span className="text-xs uppercase tracking-wider font-bold font-mono">Clip Retrieved</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <button 
@@ -2736,7 +2868,7 @@ export default function App() {
                             setRetrievedClip(null); 
                             setStatus({ type: 'idle', message: '' }); 
                           }}
-                          className="flex items-center gap-1 bg-[#E4E3E0]/20 hover:bg-[#E4E3E0]/30 text-[#E4E3E0] px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider transition-colors shrink-0"
+                          className="flex items-center gap-1 bg-[#E4E3E0]/20 hover:bg-[#E4E3E0]/30 text-[#E4E3E0] px-2 py-1 rounded-sm text-xs font-bold uppercase tracking-wider transition-colors shrink-0 cursor-pointer"
                           title="Remove Code & Close"
                         >
                           <X className="w-4 h-4" />
@@ -2750,8 +2882,8 @@ export default function App() {
                         <div className="space-y-6 text-left">
                           <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-sm space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold uppercase tracking-widest text-blue-700 font-mono">Pro Max Collection Box</span>
-                              <span className="text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm font-bold">
+                              <span className="text-xs font-bold uppercase tracking-wider text-blue-700 font-mono">Pro Max Collection Box</span>
+                              <span className="text-xs font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm font-bold">
                                 {retrievedClip.submissions?.length || 0} Submissions
                               </span>
                             </div>
@@ -2759,11 +2891,10 @@ export default function App() {
                           </div>
 
                           {user && user.uid === retrievedClip.authorUid ? (
-                            /* OWNER DASHBOARD */
                             <div className="space-y-4">
-                              <div className="text-xs font-bold uppercase tracking-widest opacity-70">Incoming Submissions ({retrievedClip.submissions?.length || 0})</div>
+                              <div className="text-xs font-bold uppercase tracking-wider text-neutral-800">Incoming Submissions ({retrievedClip.submissions?.length || 0})</div>
                               {(!retrievedClip.submissions || retrievedClip.submissions.length === 0) ? (
-                                <div className="p-6 text-center border border-dashed border-[#141414]/20 rounded-sm opacity-60 text-xs font-mono">
+                                <div className="p-6 text-center border border-dashed border-[#141414]/20 rounded-sm text-neutral-600 text-xs font-mono">
                                   No submissions yet. Share your collection code with students or teammates!
                                 </div>
                               ) : (
@@ -2772,16 +2903,16 @@ export default function App() {
                                     <div key={sIdx} className="bg-white border-2 border-[#141414] p-4 rounded-sm shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-2">
                                       <div className="flex justify-between items-center">
                                         <span className="text-xs font-bold font-mono text-blue-700">{sub.contributorName}</span>
-                                        <span className="text-[9px] opacity-50 font-mono">{new Date(sub.submittedAt).toLocaleTimeString()}</span>
+                                        <span className="text-[10px] text-neutral-600 font-mono font-medium">{new Date(sub.submittedAt).toLocaleTimeString()}</span>
                                       </div>
                                       <div className="space-y-2 pt-1">
                                         {sub.files.map((file: any, fIdx: number) => (
                                           <div key={fIdx} className="flex items-center justify-between bg-blue-50/60 p-2.5 rounded-sm border border-blue-200">
-                                            <span className="text-xs font-bold truncate pr-2">{file.fileName}</span>
+                                            <span className="text-xs font-bold truncate pr-2 text-[#141414]">{file.fileName}</span>
                                             <button 
                                               type="button"
                                               onClick={() => handleDownloadFile(file.downloadUrl || file.url, file.fileName, retrievedClip?.id)}
-                                              className="bg-blue-600 text-white px-3 py-1 rounded-sm text-[9px] font-bold uppercase tracking-wider shrink-0 hover:bg-blue-700 cursor-pointer"
+                                              className="bg-blue-600 text-white px-3 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider shrink-0 hover:bg-blue-700 cursor-pointer"
                                             >
                                               Download
                                             </button>
@@ -2794,26 +2925,25 @@ export default function App() {
                               )}
                             </div>
                           ) : (
-                            /* CONTRIBUTOR UPLOAD FORM */
                             <div className="space-y-4 bg-[#F9F9F8] border-2 border-[#141414] p-5 rounded-sm shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
                               <div className="space-y-1">
-                                <label className="text-[10px] uppercase tracking-widest font-bold opacity-70">Your Name / Student ID *</label>
+                                <label className="text-xs uppercase tracking-wider font-bold text-neutral-700">Your Name / Student ID *</label>
                                 <input 
                                   type="text"
                                   placeholder="e.g. John Doe (ID: 45892)"
                                   value={contributorName}
                                   onChange={(e) => setContributorName(e.target.value)}
-                                  className="w-full p-3 border border-[#141414] rounded-sm font-mono text-xs focus:outline-none bg-white"
+                                  className="w-full p-3 border border-[#141414] rounded-sm font-mono text-xs placeholder:text-neutral-400 focus:outline-none bg-white"
                                 />
                               </div>
 
                               <div className="space-y-2">
-                                <label className="text-[10px] uppercase tracking-widest font-bold opacity-70">Attach Files for Submission</label>
+                                <label className="text-xs uppercase tracking-wider font-bold text-neutral-700">Attach Files for Submission</label>
                                 <input 
                                   type="file" 
                                   id="contrib-files" 
                                   multiple
-                                  className="hidden"
+                                  className="hidden" 
                                   onChange={(e) => {
                                     if (e.target.files) {
                                       setContributorFiles(Array.from(e.target.files));
@@ -2825,9 +2955,9 @@ export default function App() {
                                   className="border-2 border-dashed border-[#141414]/30 hover:border-[#141414] bg-white p-6 rounded-sm text-center cursor-pointer block transition-all"
                                 >
                                   <div className="flex flex-col items-center gap-2">
-                                    <Share2 className="w-6 h-6 opacity-40" />
-                                    <span className="text-xs font-bold uppercase tracking-wider">Click to browse or drop files</span>
-                                    <span className="text-[9px] opacity-40 font-mono">Assignments, reports, media</span>
+                                    <Share2 className="w-6 h-6 text-neutral-600" />
+                                    <span className="text-xs font-bold uppercase tracking-wider text-[#141414]">Click to browse or drop files</span>
+                                    <span className="text-[10px] text-neutral-600 font-mono">Assignments, reports, media</span>
                                   </div>
                                 </label>
 
@@ -2835,8 +2965,8 @@ export default function App() {
                                   <div className="space-y-1.5 pt-2">
                                     {contributorFiles.map((f, i) => (
                                       <div key={i} className="flex items-center justify-between bg-white p-2 border border-[#141414]/20 rounded-sm text-xs font-mono">
-                                        <span className="truncate pr-2">{f.name}</span>
-                                        <span className="opacity-50 text-[10px]">{(f.size / 1024).toFixed(1)} KB</span>
+                                        <span className="truncate pr-2 text-[#141414]">{f.name}</span>
+                                        <span className="text-neutral-600 text-xs font-medium">{(f.size / 1024).toFixed(1)} KB</span>
                                       </div>
                                     ))}
                                   </div>
@@ -2846,7 +2976,7 @@ export default function App() {
                               <button 
                                 onClick={handleSubmitContribution}
                                 disabled={status.type === 'loading'}
-                                className="w-full bg-[#141414] text-[#E4E3E0] py-3.5 rounded-sm font-bold uppercase tracking-widest text-xs hover:bg-[#141414]/90 transition-all flex items-center justify-center gap-2"
+                                className="w-full bg-[#141414] text-[#E4E3E0] py-3.5 rounded-sm font-bold uppercase tracking-widest text-xs hover:bg-[#141414]/90 transition-all flex items-center justify-center gap-2 cursor-pointer"
                               >
                                 {status.type === 'loading' ? <RefreshCw className="animate-spin w-4 h-4" /> : <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
                                 Submit to Collection
@@ -2858,9 +2988,9 @@ export default function App() {
                         <div className="space-y-4">
                           {retrievedClip.files && retrievedClip.files.length > 0 && (
                             <div className="space-y-3">
-                              <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-[#141414]/70">
+                              <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider text-neutral-800">
                                 <span>Attached Files ({retrievedClip.files.length})</span>
-                                <span className="text-[10px] font-mono">
+                                <span className="text-xs font-mono text-neutral-600 font-medium">
                                   {(retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0) / (1024 * 1024)).toFixed(2)} MB
                                 </span>
                               </div>
@@ -2881,10 +3011,10 @@ export default function App() {
                                           )}
                                         </div>
                                         <div className="text-left min-w-0 flex-1">
-                                          <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block">
+                                          <div className="text-xs font-bold uppercase tracking-wider text-blue-700 truncate block">
                                             {file.fileName}
                                           </div>
-                                          <div className="text-[9px] opacity-60 font-mono">
+                                          <div className="text-[10px] text-blue-900/80 font-mono font-medium">
                                             {(file.fileSize / (1024 * 1024)).toFixed(2)} MB • {file.fileType?.split('/').pop()?.toUpperCase()}
                                           </div>
                                         </div>
@@ -2917,10 +3047,10 @@ export default function App() {
                                   )}
                                 </div>
                                 <div className="text-left min-w-0 flex-1">
-                                  <div className="text-xs font-bold uppercase tracking-widest text-blue-700 truncate block mb-1">
+                                  <div className="text-xs font-bold uppercase tracking-wider text-blue-700 truncate block mb-1">
                                     {retrievedClip.fileName}
                                   </div>
-                                  <div className="text-[10px] opacity-60 font-mono bg-blue-100/50 inline-block px-2 py-0.5 rounded-sm">
+                                  <div className="text-xs text-blue-900 font-mono font-medium bg-blue-100/70 inline-block px-2.5 py-0.5 rounded-sm">
                                     {(retrievedClip.fileSize / (1024 * 1024)).toFixed(2)} MB • {retrievedClip.fileType?.split('/').pop()?.toUpperCase()}
                                   </div>
                                 </div>
@@ -2941,7 +3071,7 @@ export default function App() {
                       {Boolean(retrievedClip.content && retrievedClip.content.trim() !== '' && retrievedClip.content !== 'Pro Max Collection Drop Box' && !retrievedClip.isCollection) && (
                         <div className="space-y-4">
                           <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                            <p className="text-sm font-mono whitespace-pre-wrap break-all text-[#141414]/80">
+                            <p className="text-sm font-mono whitespace-pre-wrap break-all text-neutral-900 font-medium">
                               {retrievedClip.content}
                             </p>
                           </div>
@@ -2949,7 +3079,7 @@ export default function App() {
                           <div className="flex gap-3">
                             <button 
                               onClick={() => handleCopy(retrievedClip.content)}
-                              className={`flex-1 py-3 rounded-sm font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all ${
+                              className={`flex-1 py-3 rounded-sm font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
                                 copySuccess 
                                   ? 'bg-emerald-500 text-white' 
                                   : 'bg-[#141414] text-[#E4E3E0] hover:bg-[#141414]/90'
@@ -2972,20 +3102,11 @@ export default function App() {
                       )}
                     </div>
                   </motion.div>
-                    )}
-                </div>
-              )}
-              </motion.div>
-            ) : (
-              <Vault 
-                user={user} 
-                handleCopyCode={handleCopyCode} 
-                onReactivate={handleReactivate} 
-                reactivatingClips={reactivatingClips} 
-              />
+                )}
+              </div>
             )}
-          </AnimatePresence>
-
+          </div>
+        </div>
           {/* Status Messages */}
           <AnimatePresence>
             {status.message && status.type !== 'loading' && (
@@ -2993,17 +3114,17 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                className={`absolute bottom-2 sm:bottom-4 left-2 sm:left-4 right-2 sm:right-4 p-3 border flex flex-col sm:flex-row items-center gap-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded-sm z-50 ${
-                  status.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'
+                className={`absolute bottom-2 sm:bottom-4 left-2 sm:left-4 right-2 sm:right-4 p-3 border-2 flex flex-col sm:flex-row items-center gap-3 text-xs font-bold uppercase tracking-wider rounded-sm z-50 ${
+                  status.type === 'success' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-red-50 border-red-300 text-red-800'
                 }`}
               >
                 <div className="flex items-center gap-3 w-full">
-                  {status.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  {status.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />}
                   <span className="flex-1">{status.message.replace('[Upgrade Now]', '')}</span>
                   {status.type === 'error' && status.message.includes('new tab') && (
                     <button 
                       onClick={() => window.open(window.location.href, '_blank')}
-                      className="bg-red-700 text-white px-3 py-1.5 rounded-sm hover:bg-red-800 transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0"
+                      className="bg-red-800 text-white px-3 py-1.5 rounded-sm hover:bg-red-700 transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 cursor-pointer"
                     >
                       Open in New Tab
                     </button>
@@ -3012,7 +3133,7 @@ export default function App() {
                 {status.message.includes('[Upgrade Now]') && (
                   <button 
                     onClick={() => setShowProModal(true)}
-                    className="bg-red-700 text-white px-3 py-1.5 rounded-sm hover:bg-red-800 transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0"
+                    className="bg-red-800 text-white px-3 py-1.5 rounded-sm hover:bg-red-700 transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 cursor-pointer"
                   >
                     Upgrade Now
                   </button>
@@ -3020,47 +3141,49 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </main>
+      )}
 
-        {/* Footer Info */}
-        <footer className="mt-12 sm:mt-16 pb-12 space-y-8">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-8">
-            <div className="space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-30">Security</p>
-              <p className="text-xs opacity-60 leading-relaxed">End-to-end encrypted logic. Clips are automatically purged after expiration.</p>
+      {/* Footer Info */}
+      <footer className="w-full mt-12 sm:mt-16 pb-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto space-y-6 lg:space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+            <div className="space-y-1.5">
+              <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">Security</p>
+              <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed font-normal">End-to-end encrypted logic. Clips are automatically purged after expiration.</p>
             </div>
-            <div className="space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-30">Universal</p>
-              <p className="text-xs opacity-60 leading-relaxed">Works on any device with a browser. No app installation required.</p>
+            <div className="space-y-1.5">
+              <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">Universal</p>
+              <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed font-normal">Works on any device with a browser. No app installation required.</p>
             </div>
-            <div className="space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-30">Speed</p>
-              <p className="text-xs opacity-60 leading-relaxed">Optimized for instant transfers. 8-character codes for maximum efficiency.</p>
+            <div className="space-y-1.5">
+              <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">Speed</p>
+              <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed font-normal">Optimized for instant transfers. 8-character codes for maximum efficiency.</p>
             </div>
           </div>
 
-          <div className="pt-8 border-t border-[#141414]/10 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-2 opacity-20">
-              <Share2 className="w-4 h-4" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.3em]">ClipCloud v2.5</span>
+          <div className="pt-6 border-t border-[#141414]/15 flex flex-col sm:flex-row justify-between items-center gap-3">
+            <div className="flex items-center gap-2 text-neutral-700">
+              <Share2 className="w-3.5 h-3.5 text-neutral-800" />
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-neutral-800">Sendarro v2.5</span>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-5">
               <button 
                 onClick={() => setShowOnboarding(true)}
-                className="text-[10px] font-bold uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity underline underline-offset-4"
+                className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-neutral-600 hover:text-neutral-950 transition-colors underline underline-offset-4 cursor-pointer"
               >
                 How it works
               </button>
               <button 
                 onClick={() => setShowLegalModal(true)}
-                className="text-[10px] font-bold uppercase tracking-widest opacity-40 hover:opacity-100 transition-opacity underline underline-offset-4"
+                className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-neutral-600 hover:text-neutral-950 transition-colors underline underline-offset-4 cursor-pointer"
               >
                 Privacy & Terms
               </button>
             </div>
           </div>
-        </footer>
-      </main>
+        </div>
+      </footer>
 
       {/* Background Grid Accent */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-[-1]" 
@@ -3096,13 +3219,13 @@ export default function App() {
                       <div className="w-5 h-5 bg-[#141414] rounded-sm flex items-center justify-center">
                         <Zap className="w-3 h-3 text-emerald-400" />
                       </div>
-                      <span className="text-[9px] uppercase tracking-[0.3em] font-bold">Subscription Tiers</span>
+                      <span className="text-[10px] uppercase tracking-[0.3em] font-bold text-[#141414]">Subscription Tiers</span>
                     </div>
-                    <h2 className="text-4xl font-serif italic leading-[0.8] tracking-tighter">
+                    <h2 className="text-4xl font-serif italic leading-[0.85] tracking-tighter text-[#141414]">
                       Choose your<br />power level.
                     </h2>
                   </div>
-                  <p className="text-[11px] opacity-60 font-light leading-relaxed max-w-[200px]">
+                  <p className="text-xs text-neutral-700 font-normal leading-relaxed max-w-[240px]">
                     From casual sharing to professional-grade transfer.
                   </p>
                 </div>
@@ -3113,11 +3236,11 @@ export default function App() {
                 <div className="p-6 space-y-6 flex flex-col justify-between">
                   <div className="space-y-4">
                     <div className="space-y-1">
-                      <h3 className="text-lg font-bold uppercase tracking-tighter">Free</h3>
-                      <p className="text-[9px] opacity-50 uppercase tracking-widest font-bold">Casual Use</p>
+                      <h3 className="text-lg font-bold uppercase tracking-tighter text-[#141414]">Free</h3>
+                      <p className="text-xs text-neutral-600 uppercase tracking-wider font-bold">Casual Use</p>
                     </div>
-                    <div className="text-3xl font-serif italic">$0</div>
-                    <ul className="space-y-2">
+                    <div className="text-3xl font-serif italic text-[#141414]">$0</div>
+                    <ul className="space-y-2.5">
                       {[
                         "8-Character Codes",
                         "10k Character Limit",
@@ -3125,8 +3248,8 @@ export default function App() {
                         "Instant Direct Retrieval",
                         "File Sharing (Up to 10MB)"
                       ].map((f, i) => (
-                        <li key={i} className="flex gap-2 items-center text-[10px] opacity-70">
-                          <CheckCircle2 className="w-3 h-3 text-[#141414]/30" />
+                        <li key={i} className="flex gap-2 items-center text-xs text-neutral-800 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
                           {f}
                         </li>
                       ))}
@@ -3138,7 +3261,7 @@ export default function App() {
                         setHasDismissedFree(true);
                         setShowProModal(false);
                       }}
-                      className="w-full border-2 border-[#141414] py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] hover:bg-[#141414] hover:text-[#E4E3E0] transition-all"
+                      className="w-full border-2 border-[#141414] py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] hover:bg-[#141414] hover:text-[#E4E3E0] transition-all cursor-pointer"
                     >
                       Current Plan
                     </button>
@@ -3149,11 +3272,11 @@ export default function App() {
                 <div className="p-6 space-y-6 flex flex-col justify-between bg-white/40">
                   <div className="space-y-4">
                     <div className="space-y-1">
-                      <h3 className="text-lg font-bold uppercase tracking-tighter text-emerald-600">Pro</h3>
-                      <p className="text-[9px] opacity-50 uppercase tracking-widest font-bold">Power User</p>
+                      <h3 className="text-lg font-bold uppercase tracking-tighter text-emerald-700">Pro</h3>
+                      <p className="text-xs text-emerald-700 uppercase tracking-wider font-bold">Power User</p>
                     </div>
-                    <div className="text-3xl font-serif italic">$4.99<span className="text-[10px] opacity-40 italic">/mo</span></div>
-                    <ul className="space-y-2">
+                    <div className="text-3xl font-serif italic text-[#141414]">$4.99<span className="text-xs text-neutral-600 italic">/mo</span></div>
+                    <ul className="space-y-2.5">
                       {[
                         "5+ Character Custom Codes",
                         "100k Character Limit",
@@ -3162,8 +3285,8 @@ export default function App() {
                         "Priority Sync",
                         "File Sharing (Up to 50MB)"
                       ].map((f, i) => (
-                        <li key={i} className="flex gap-2 items-center text-[10px]">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                        <li key={i} className="flex gap-2 items-center text-xs text-neutral-800 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                           {f}
                         </li>
                       ))}
@@ -3171,7 +3294,7 @@ export default function App() {
                   </div>
                   <button 
                     onClick={() => handleCheckout('https://buy.stripe.com/test_5kQ4gz8Yycn1dzN8nebwk00')}
-                    className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all ${
+                    className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all cursor-pointer ${
                       tier === 'pro' 
                         ? 'bg-emerald-500 text-black cursor-default' 
                         : 'bg-[#141414] text-[#E4E3E0] hover:shadow-[3px_3px_0px_0px_rgba(16,185,129,1)] hover:translate-x-[-1px] hover:translate-y-[-1px]'
@@ -3187,12 +3310,12 @@ export default function App() {
                     <div className="flex justify-between items-start">
                       <div className="space-y-1">
                         <h3 className="text-lg font-bold uppercase tracking-tighter text-blue-400">Pro Max</h3>
-                        <p className="text-[9px] opacity-50 uppercase tracking-widest font-bold">Elite Professional</p>
+                        <p className="text-xs text-blue-300 uppercase tracking-wider font-bold">Elite Professional</p>
                       </div>
                       <div className="bg-blue-500 text-black text-[7px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-widest">Best Value</div>
                     </div>
-                    <div className="text-3xl font-serif italic">$9.99<span className="text-[10px] opacity-40 italic">/mo</span></div>
-                    <ul className="space-y-2">
+                    <div className="text-3xl font-serif italic">$9.99<span className="text-xs text-neutral-300 italic">/mo</span></div>
+                    <ul className="space-y-2.5">
                       {[
                         "3-4 Character Short Codes",
                         "Collection Drop Box (Team Inbox)",
@@ -3200,8 +3323,8 @@ export default function App() {
                         "Pro Max Insurance",
                         "Unlimited File Sharing (Max 1GB)"
                       ].map((f, i) => (
-                        <li key={i} className="flex gap-2 items-center text-[10px]">
-                          <Zap className="w-3 h-3 text-blue-400 fill-blue-400" />
+                        <li key={i} className="flex gap-2 items-center text-xs text-neutral-200 font-medium">
+                          <Zap className="w-3.5 h-3.5 text-blue-400 fill-blue-400 shrink-0" />
                           {f}
                         </li>
                       ))}
@@ -3209,7 +3332,7 @@ export default function App() {
                   </div>
                   <button 
                     onClick={() => handleCheckout('https://buy.stripe.com/test_6oU14ngr072HdzN6f6bwk01')}
-                    className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all ${
+                    className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all cursor-pointer ${
                       tier === 'promax' 
                         ? 'bg-blue-500 text-black cursor-default' 
                         : 'bg-white text-[#141414] hover:shadow-[3px_3px_0px_0px_rgba(59,130,246,1)] hover:translate-x-[-1px] hover:translate-y-[-1px]'
@@ -3221,15 +3344,15 @@ export default function App() {
               </div>
 
               <div className="p-4 bg-[#141414]/5 border-t-2 border-[#141414] flex flex-col md:flex-row items-center justify-between gap-2">
-                <div className="flex items-center gap-3 opacity-40">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span className="text-[8px] uppercase tracking-[0.3em] font-bold">Enterprise-Grade Security</span>
+                <div className="flex items-center gap-3 text-neutral-700">
+                  <ShieldCheck className="w-4 h-4 text-neutral-800" />
+                  <span className="text-[9px] uppercase tracking-[0.2em] font-bold text-neutral-800">Enterprise-Grade Security</span>
                 </div>
                 <div className="flex items-center gap-4">
                   {!user && (
                     <button 
                       onClick={() => handleLogin()}
-                      className="text-[9px] font-bold uppercase tracking-widest underline underline-offset-4 hover:text-emerald-600"
+                      className="text-xs font-bold uppercase tracking-wider underline underline-offset-4 text-neutral-800 hover:text-emerald-700 cursor-pointer"
                     >
                       Login to see your personalized offers
                     </button>
@@ -3300,8 +3423,8 @@ export default function App() {
               <div className="p-6 sm:p-10 overflow-y-auto custom-scrollbar space-y-8">
                 <section className="space-y-4">
                   <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-blue-600">Terms of Service</h3>
-                  <div className="space-y-4 text-sm opacity-70 leading-relaxed font-mono">
-                    <p>1. ClipCloud is a temporary peer-to-peer data transfer service. Files and clips are held temporarily on secure servers until fetched or expired.</p>
+                  <div className="space-y-4 text-sm text-neutral-700 leading-relaxed font-mono">
+                    <p>1. Sendarro is a temporary peer-to-peer data transfer service. Files and clips are held temporarily on secure servers until fetched or expired.</p>
                     <p>2. Single-Use Transfer: Content shared in single-use mode is removed from temporary storage after initial retrieval to preserve privacy.</p>
                     <p>3. Automatic Expiration: Unclaimed clips automatically expire after their configured duration (e.g. 1h, 24h) and are purged.</p>
                     <p>4. User Responsibility: Users are solely responsible for content shared. Illegal, harmful, or unauthorized files are strictly prohibited.</p>
@@ -3310,7 +3433,7 @@ export default function App() {
 
                 <section className="space-y-4">
                   <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-emerald-600">Privacy Policy</h3>
-                  <div className="space-y-4 text-sm opacity-70 leading-relaxed font-mono">
+                  <div className="space-y-4 text-sm text-neutral-700 leading-relaxed font-mono">
                     <p>1. We collect minimal data: your email (via Google Auth) and the content of your clips.</p>
                     <p>2. Clips are stored temporarily and are automatically deleted upon expiration.</p>
                     <p>3. We do not sell your data to third parties. Your information is used only to provide the service.</p>
@@ -3320,7 +3443,7 @@ export default function App() {
 
                 <section className="space-y-4">
                   <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-amber-600">Cookie Policy</h3>
-                  <div className="space-y-4 text-sm opacity-70 leading-relaxed font-mono">
+                  <div className="space-y-4 text-sm text-neutral-700 leading-relaxed font-mono">
                     <p>We use essential cookies and local storage to manage your session and keep you logged in. These are technical requirements for the app to function.</p>
                   </div>
                 </section>
@@ -3353,7 +3476,7 @@ export default function App() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-bold uppercase tracking-widest">Privacy First</p>
-                  <p className="text-[10px] opacity-60 leading-relaxed">We use essential cookies to keep you logged in and secure. By using ClipCloud, you agree to our terms.</p>
+                  <p className="text-xs text-neutral-300 leading-relaxed">We use essential cookies to keep you logged in and secure. By using Sendarro, you agree to our terms.</p>
                 </div>
               </div>
               <div className="flex gap-3">

@@ -19,7 +19,7 @@ interface OnboardingProps {
 const steps = [
   {
     title: "The Universal Clipboard",
-    description: "ClipCloud is designed for instant data transfer between your devices. No accounts, no cables, no friction.",
+    description: "Sendarro is designed for instant data transfer between your devices. No accounts, no cables, no friction.",
     icon: <Share2 className="w-8 h-8" />,
     color: "bg-[#141414]",
     accent: "text-white"
@@ -95,10 +95,10 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
               </div>
               
               <div className="space-y-3">
-                <h2 className="text-3xl font-serif italic font-bold leading-tight">
+                <h2 className="text-3xl font-serif italic font-bold leading-tight text-[#141414]">
                   {steps[currentStep].title}
                 </h2>
-                <p className="text-sm sm:text-base opacity-70 leading-relaxed font-mono">
+                <p className="text-sm sm:text-base text-neutral-700 leading-relaxed">
                   {steps[currentStep].description}
                 </p>
               </div>
@@ -126,7 +126,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             {currentStep < steps.length - 1 && (
               <button 
                 onClick={onComplete}
-                className="text-[10px] uppercase tracking-widest font-bold opacity-40 hover:opacity-100 transition-opacity"
+                className="text-xs uppercase tracking-wider font-semibold text-neutral-600 hover:text-neutral-950 transition-colors"
               >
                 Skip Tutorial
               </button>
@@ -135,11 +135,11 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         </div>
 
         <div className="p-4 bg-[#141414]/5 border-t border-[#141414]/10 flex justify-between items-center">
-          <div className="flex items-center gap-2 opacity-30">
-            <ShieldCheck className="w-3 h-3" />
-            <span className="text-[8px] uppercase tracking-widest font-bold">Encrypted Protocol</span>
+          <div className="flex items-center gap-2 text-neutral-600">
+            <ShieldCheck className="w-3.5 h-3.5 text-neutral-700" />
+            <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-700">Encrypted Protocol</span>
           </div>
-          <span className="text-[10px] font-mono opacity-30">0{currentStep + 1} / 0{steps.length}</span>
+          <span className="text-xs font-mono font-semibold text-neutral-700">0{currentStep + 1} / 0{steps.length}</span>
         </div>
       </motion.div>
     </motion.div>

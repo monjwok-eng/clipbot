@@ -10,6 +10,31 @@ import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import Stripe from "stripe";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+function getR2Client(): S3Client | null {
+  let accountId = process.env.R2_ACCOUNT_ID;
+  if (!accountId || accountId.startsWith('cfut_')) {
+    accountId = "32143cfd2e67a3f632ebd77012172941";
+  }
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || "9921230f475bf0756a6d20f29a1b489b";
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || "7e15a7eb5415f1ca7424ffad9135181cf1ce002a913732d3b31955b6b2f2cff6";
+  if (!accountId || !accessKeyId || !secretAccessKey) {
+    return null;
+  }
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+  });
+}
 
 let stripeClient: Stripe | null = null;
 function getStripe(): Stripe {
@@ -163,6 +188,7 @@ app.post("/api/webhook", express.raw({ type: 'application/json' }), async (req, 
 });
 
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 // API Routes
 app.get("/api/health", (req, res) => {
@@ -322,6 +348,52 @@ app.post("/api/sync-user-subscription", verifyToken, async (req, res) => {
   } catch (err: any) {
     console.error("Sync Subscription Error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint to generate Cloudflare R2 / S3 Presigned Upload URLs (Bypasses Node.js server for uploads)
+app.post("/api/get-upload-url", optionalVerifyToken, async (req, res) => {
+  try {
+    const { fileName, fileType } = req.body;
+    if (!fileName) {
+      return res.status(400).json({ error: "fileName is required" });
+    }
+
+    const r2 = getR2Client();
+    let bucketName = process.env.R2_BUCKET_NAME || process.env.S3_BUCKET_NAME;
+    if (!bucketName || bucketName === "R2 User Token") {
+      bucketName = "sendarro-uploads";
+    }
+
+    if (r2 && bucketName) {
+      const sanitizedName = fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const fileKey = `clips/${Date.now()}-${Math.round(Math.random() * 1e9)}-${sanitizedName}`;
+      const command = new PutObjectCommand({
+        Bucket: bucketName,
+        Key: fileKey,
+        ContentType: fileType || "application/octet-stream",
+      });
+
+      // Presigned URL valid for 15 minutes (900 seconds)
+      const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 900 });
+      const publicDomain = process.env.R2_PUBLIC_DOMAIN || process.env.R2_DEV_URL || "";
+      const publicUrl = publicDomain 
+        ? `${publicDomain.replace(/\/$/, '')}/${fileKey}` 
+        : `/api/r2-proxy/${fileKey}`;
+
+      return res.json({ 
+        directR2: true, 
+        uploadUrl, 
+        fileKey, 
+        publicUrl 
+      });
+    }
+
+    // Return directR2: false if R2 credentials are not configured, enabling client fallback
+    return res.json({ directR2: false });
+  } catch (err: any) {
+    console.error("Presigned URL Generation Error:", err);
+    res.status(500).json({ error: err.message || "Failed to generate presigned upload URL" });
   }
 });
 
