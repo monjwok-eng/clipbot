@@ -9,11 +9,13 @@ export const SendarroLogo: React.FC<SendarroLogoProps> = ({
   className = "h-10 sm:h-12 md:h-14 object-contain", 
   onClick 
 }) => {
-  const [imgSrc, setImgSrc] = useState<string>('/sendarro-logo.png');
+  const [imgSrc, setImgSrc] = useState<string>('/sendarro-logo.webp');
   const [hasError, setHasError] = useState<boolean>(false);
 
   const handleError = () => {
-    if (imgSrc === '/sendarro-logo.png') {
+    if (imgSrc === '/sendarro-logo.webp') {
+      setImgSrc('/sendarro-logo.png');
+    } else if (imgSrc === '/sendarro-logo.png') {
       setImgSrc('/assets/aistudio/83514-removebg-preview_592796fb.png');
     } else if (imgSrc === '/assets/aistudio/83514-removebg-preview_592796fb.png') {
       setImgSrc('/logo.png');
@@ -40,6 +42,10 @@ export const SendarroLogo: React.FC<SendarroLogoProps> = ({
     <img 
       src={imgSrc} 
       alt="Sendarro" 
+      loading="eager"
+      decoding="async"
+      // @ts-ignore
+      fetchpriority="high"
       onError={handleError}
       onClick={onClick}
       className={`object-contain transition-all ${className} ${onClick ? 'cursor-pointer' : ''}`} 

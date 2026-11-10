@@ -877,8 +877,16 @@ export default function App() {
     return () => unsubUser();
   }, [user]);
   
-  const isPro = tier === 'pro' || tier === 'promax';
-  const isProMax = tier === 'promax';
+  const isRealUser = Boolean(user && !user.isAnonymous && !isGuest);
+  const effectiveTier = isRealUser ? tier : 'free';
+  const isPro = isRealUser && (effectiveTier === 'pro' || effectiveTier === 'promax');
+  const isProMax = isRealUser && effectiveTier === 'promax';
+
+  useEffect(() => {
+    if (!isProMax && shareMode === 'collection') {
+      setShareMode('file');
+    }
+  }, [isProMax, shareMode]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const hasShownPaywall = useRef(false);
 
@@ -887,13 +895,15 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       setAuthLoading(false);
-      if (u) {
+      if (u && !u.isAnonymous) {
         setIsGuest(false);
 
         // Instantly restore cached tier for this user
-        const cachedTier = localStorage.getItem(`clipcloud_tier_${u.uid}`) || localStorage.getItem('clipcloud_user_tier');
+        const cachedTier = localStorage.getItem(`clipcloud_tier_${u.uid}`);
         if (cachedTier === 'pro' || cachedTier === 'promax') {
           setTier(cachedTier as any, u.uid);
+        } else {
+          setTierState('free');
         }
 
         // Directly sync user profile document in Firebase Firestore
@@ -938,10 +948,9 @@ export default function App() {
           localStorage.setItem('hasShownPaywall', 'true');
         }
       } else {
-        const globalTier = localStorage.getItem('clipcloud_user_tier');
-        if (globalTier !== 'pro' && globalTier !== 'promax') {
-          setTier('free');
-        }
+        setIsGuest(true);
+        setTierState('free');
+        localStorage.removeItem('clipcloud_user_tier');
         localStorage.removeItem('hasShownPaywall');
         setHasDismissedFree(false);
       }
@@ -990,6 +999,9 @@ export default function App() {
   // REMOVED FROM HERE - DEFINED OUTSIDE APP
 
   const handleGuestEnter = async () => {
+    setIsGuest(true);
+    setTierState('free');
+    localStorage.removeItem('clipcloud_user_tier');
     try {
       await signInAnonymously(auth);
     } catch (e: any) {
@@ -998,7 +1010,6 @@ export default function App() {
         console.warn("Guest sign-in:", e?.message || e);
       }
     }
-    setIsGuest(true);
     if (!localStorage.getItem('clipcloud_onboarding_seen')) {
       setShowOnboarding(true);
     }
@@ -1040,6 +1051,8 @@ export default function App() {
     try {
       await signOut(auth);
       setIsGuest(false);
+      setTierState('free');
+      localStorage.removeItem('clipcloud_user_tier');
     } catch (err) {
       console.error(err);
     }
