@@ -2433,6 +2433,7 @@ export default function App() {
           onBackToApp={() => setCurrentView('app')} 
           onNavigateToPricing={() => setCurrentView('pricing')} 
           onOpenAuth={() => setShowLoginModal(true)} 
+          currentLang={currentLang}
         />
       ) : currentView === 'pricing' ? (
         <PricingPage 
@@ -2441,6 +2442,7 @@ export default function App() {
           onUpgrade={handleCheckout} 
           onRestorePurchases={handleRestorePurchases} 
           tier={tier} 
+          currentLang={currentLang}
         />
       ) : (
         <main className="w-full max-w-md mx-auto sm:ml-8 lg:ml-16 sm:mr-auto p-4 sm:p-4 lg:px-6 pt-6 sm:pt-16">
@@ -3395,45 +3397,44 @@ export default function App() {
               className="bg-[#E4E3E0] border-2 border-[#141414] max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col rounded-sm shadow-2xl"
             >
               <div className="p-6 border-b border-[#141414] flex justify-between items-center bg-white">
-                <h2 className="text-2xl font-serif italic font-bold">Legal Information</h2>
-                <button onClick={() => setShowLegalModal(false)} className="p-2 hover:bg-[#141414]/5 rounded-sm">
+                <h2 className="text-2xl font-serif italic font-bold">{t.legalInfoTitle}</h2>
+                <button onClick={() => setShowLegalModal(false)} className="p-2 hover:bg-[#141414]/5 rounded-sm cursor-pointer">
                   <X className="w-6 h-6" />
                 </button>
               </div>
               <div className="p-6 sm:p-10 overflow-y-auto custom-scrollbar space-y-8">
                 <section className="space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-blue-600">Terms of Service</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-blue-600">{t.termsOfService}</h3>
                   <div className="space-y-4 text-sm text-neutral-700 leading-relaxed font-mono">
-                    <p>1. Sendarro is a temporary peer-to-peer data transfer service. Files and clips are held temporarily on secure servers until fetched or expired.</p>
-                    <p>2. Single-Use Transfer: Content shared in single-use mode is removed from temporary storage after initial retrieval to preserve privacy.</p>
-                    <p>3. Automatic Expiration: Unclaimed clips automatically expire after their configured duration (e.g. 1h, 24h) and are purged.</p>
-                    <p>4. User Responsibility: Users are solely responsible for content shared. Illegal, harmful, or unauthorized files are strictly prohibited.</p>
+                    <p>{t.tosLine1}</p>
+                    <p>{t.tosLine2}</p>
+                    <p>{t.tosLine3}</p>
+                    <p>{t.tosLine4}</p>
                   </div>
                 </section>
 
                 <section className="space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-emerald-600">Privacy Policy</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-emerald-600">{t.privacyPolicy}</h3>
                   <div className="space-y-4 text-sm text-neutral-700 leading-relaxed font-mono">
-                    <p>1. We collect minimal data: your email (via Google Auth) and the content of your clips.</p>
-                    <p>2. Clips are stored temporarily and are automatically deleted upon expiration.</p>
-                    <p>3. We do not sell your data to third parties. Your information is used only to provide the service.</p>
-                    <p>4. We use industry-standard encryption and security practices to protect your data in transit and at rest.</p>
+                    <p>{t.privLine1}</p>
+                    <p>{t.privLine2}</p>
+                    <p>{t.privLine3}</p>
                   </div>
                 </section>
 
                 <section className="space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-amber-600">Cookie Policy</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-amber-600">{t.cookiePolicy}</h3>
                   <div className="space-y-4 text-sm text-neutral-700 leading-relaxed font-mono">
-                    <p>We use essential cookies and local storage to manage your session and keep you logged in. These are technical requirements for the app to function.</p>
+                    <p>{t.cookieLine1}</p>
                   </div>
                 </section>
               </div>
               <div className="p-6 border-t border-[#141414] bg-white flex justify-end">
                 <button 
                   onClick={() => setShowLegalModal(false)}
-                  className="bg-[#141414] text-[#E4E3E0] px-8 py-3 rounded-sm font-bold uppercase tracking-widest hover:opacity-90 transition-opacity"
+                  className="bg-[#141414] text-[#E4E3E0] px-8 py-3 rounded-sm font-bold uppercase tracking-widest hover:opacity-90 transition-opacity cursor-pointer"
                 >
-                  Understood
+                  {t.understoodBtn}
                 </button>
               </div>
             </motion.div>
@@ -3455,22 +3456,22 @@ export default function App() {
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
-                  <p className="text-xs font-bold uppercase tracking-widest">Privacy First</p>
-                  <p className="text-xs text-neutral-300 leading-relaxed">We use essential cookies to keep you logged in and secure. By using Sendarro, you agree to our terms.</p>
+                  <p className="text-xs font-bold uppercase tracking-widest">{t.privacyTerms}</p>
+                  <p className="text-xs text-neutral-300 leading-relaxed">{t.cookieLine1}</p>
                 </div>
               </div>
               <div className="flex gap-3">
                 <button 
                   onClick={acceptCookies}
-                  className="flex-1 bg-white text-[#141414] py-2 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-400 transition-colors"
+                  className="flex-1 bg-white text-[#141414] py-2 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-400 transition-colors cursor-pointer"
                 >
-                  Accept
+                  {t.understoodBtn}
                 </button>
                 <button 
                   onClick={() => setShowLegalModal(true)}
-                  className="flex-1 border border-white/20 py-2 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-white/5 transition-colors"
+                  className="flex-1 border border-white/20 py-2 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-white/5 transition-colors cursor-pointer"
                 >
-                  Details
+                  {t.privacyTerms}
                 </button>
               </div>
             </div>
@@ -3481,7 +3482,7 @@ export default function App() {
 
       <AnimatePresence>
         {showOnboarding && (user || isGuest) && (
-          <Onboarding key="onboarding-modal" onComplete={completeOnboarding} />
+          <Onboarding key="onboarding-modal" onComplete={completeOnboarding} currentLang={currentLang} />
         )}
       </AnimatePresence>
 

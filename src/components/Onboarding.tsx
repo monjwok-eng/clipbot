@@ -2,53 +2,54 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Share2, 
-  Zap, 
-  ShieldCheck, 
   ArrowRight, 
   CheckCircle2, 
-  X,
   Smartphone,
   Laptop,
-  Lock
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
+import { LanguageCode, translations } from '../utils/i18n';
 
 interface OnboardingProps {
   onComplete: () => void;
+  currentLang?: LanguageCode;
 }
 
-const steps = [
-  {
-    title: "The Universal Clipboard",
-    description: "Sendarro is designed for instant data transfer between your devices. No accounts, no cables, no friction.",
-    icon: <Share2 className="w-8 h-8" />,
-    color: "bg-[#141414]",
-    accent: "text-white"
-  },
-  {
-    title: "Step 1: Share",
-    description: "Paste text or upload files on one device. We generate a unique 8-character code instantly.",
-    icon: <Smartphone className="w-8 h-8" />,
-    color: "bg-emerald-500",
-    accent: "text-black"
-  },
-  {
-    title: "Step 2: Get",
-    description: "Enter that code on any other device to retrieve your content. It's that simple.",
-    icon: <Laptop className="w-8 h-8" />,
-    color: "bg-blue-500",
-    accent: "text-white"
-  },
-  {
-    title: "Security & Privacy",
-    description: "Clips are temporary. Free clips stay active for 1 hour. Pro clips last up to 24h. Everything is purged automatically.",
-    icon: <Lock className="w-8 h-8" />,
-    color: "bg-amber-500",
-    accent: "text-black"
-  }
-];
-
-export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
+export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, currentLang = 'en' }) => {
   const [currentStep, setCurrentStep] = useState(0);
+  const t = translations[currentLang] || translations.en;
+
+  const steps = [
+    {
+      title: t.onboardingTitle1,
+      description: t.onboardingDesc1,
+      icon: <Share2 className="w-8 h-8" />,
+      color: "bg-[#141414]",
+      accent: "text-white"
+    },
+    {
+      title: t.onboardingTitle2,
+      description: t.onboardingDesc2,
+      icon: <Smartphone className="w-8 h-8" />,
+      color: "bg-emerald-500",
+      accent: "text-black"
+    },
+    {
+      title: t.onboardingTitle3,
+      description: t.onboardingDesc3,
+      icon: <Laptop className="w-8 h-8" />,
+      color: "bg-blue-500",
+      accent: "text-white"
+    },
+    {
+      title: t.onboardingTitle4,
+      description: t.onboardingDesc4,
+      icon: <Lock className="w-8 h-8" />,
+      color: "bg-amber-500",
+      accent: "text-black"
+    }
+  ];
 
   const nextStep = () => {
     if (currentStep < steps.length - 1) {
@@ -108,16 +109,16 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
           <div className="pt-4 flex flex-col gap-3">
             <button 
               onClick={nextStep}
-              className="w-full bg-[#141414] text-[#E4E3E0] py-4 rounded-md font-bold uppercase tracking-[0.2em] hover:bg-[#141414]/90 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+              className="w-full bg-[#141414] text-[#E4E3E0] py-4 rounded-md font-bold uppercase tracking-[0.2em] hover:bg-[#141414]/90 active:scale-[0.98] transition-all flex items-center justify-center gap-3 cursor-pointer"
             >
               {currentStep === steps.length - 1 ? (
                 <>
                   <CheckCircle2 className="w-5 h-5" />
-                  Start Sharing
+                  {t.startSharing}
                 </>
               ) : (
                 <>
-                  Next Step
+                  {t.nextStep}
                   <ArrowRight className="w-5 h-5" />
                 </>
               )}
@@ -126,9 +127,9 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             {currentStep < steps.length - 1 && (
               <button 
                 onClick={onComplete}
-                className="text-xs uppercase tracking-wider font-semibold text-neutral-600 hover:text-neutral-950 transition-colors"
+                className="text-xs uppercase tracking-wider font-semibold text-neutral-600 hover:text-neutral-950 transition-colors cursor-pointer"
               >
-                Skip Tutorial
+                {t.skipTutorial}
               </button>
             )}
           </div>
@@ -137,7 +138,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         <div className="p-4 bg-[#141414]/5 border-t border-[#141414]/10 flex justify-between items-center">
           <div className="flex items-center gap-2 text-neutral-600">
             <ShieldCheck className="w-3.5 h-3.5 text-neutral-700" />
-            <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-700">Encrypted Protocol</span>
+            <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-700">{t.encryptedProtocol}</span>
           </div>
           <span className="text-xs font-mono font-semibold text-neutral-700">0{currentStep + 1} / 0{steps.length}</span>
         </div>
