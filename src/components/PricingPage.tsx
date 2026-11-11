@@ -111,7 +111,53 @@ export const PricingPage: React.FC<PricingPageProps> = ({
                 <BarChart2 className="w-6 h-6 text-emerald-600" />
                 {t.comparisonTitle}
             </h2>
-            <div className="grid md:grid-cols-3 gap-6 text-xs sm:text-sm font-mono text-neutral-700 leading-relaxed">
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs sm:text-sm font-mono">
+                <thead>
+                  <tr className="border-b-2 border-[#141414]">
+                    <th className="p-4 bg-neutral-50 font-bold uppercase tracking-wider">Feature</th>
+                    <th className="p-4 bg-neutral-50 font-bold uppercase tracking-wider">Sendarro</th>
+                    <th className="p-4 font-bold uppercase tracking-wider">Pastebin</th>
+                    <th className="p-4 font-bold uppercase tracking-wider">AirDrop</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#141414]/15">
+                  <tr>
+                    <td className="p-4 font-bold text-[#141414]">Max Character Limit</td>
+                    <td className="p-4 bg-emerald-50 text-emerald-900 font-bold">100,000 (Pro)</td>
+                    <td className="p-4 text-neutral-600">Limited (Free)</td>
+                    <td className="p-4 text-neutral-600">Unlimited</td>
+                  </tr>
+                  <tr>
+                    <td className="p-4 font-bold text-[#141414]">File Sharing</td>
+                    <td className="p-4 bg-emerald-50 text-emerald-900 font-bold">Yes (Instant)</td>
+                    <td className="p-4 text-neutral-600">No</td>
+                    <td className="p-4 text-neutral-600">Yes</td>
+                  </tr>
+                  <tr>
+                    <td className="p-4 font-bold text-[#141414]">Auto-Expiry</td>
+                    <td className="p-4 bg-emerald-50 text-emerald-900 font-bold">Yes (Secure)</td>
+                    <td className="p-4 text-neutral-600">Manual Only</td>
+                    <td className="p-4 text-neutral-600">N/A</td>
+                  </tr>
+                  <tr>
+                    <td className="p-4 font-bold text-[#141414]">Cross-Platform</td>
+                    <td className="p-4 bg-emerald-50 text-emerald-900 font-bold">Yes (Browser)</td>
+                    <td className="p-4 text-neutral-600">Yes</td>
+                    <td className="p-4 text-neutral-600">No (Apple Only)</td>
+                  </tr>
+                  <tr>
+                    <td className="p-4 font-bold text-[#141414]">Team Inbox</td>
+                    <td className="p-4 bg-emerald-50 text-emerald-900 font-bold">Yes (Pro Max)</td>
+                    <td className="p-4 text-neutral-600">No</td>
+                    <td className="p-4 text-neutral-600">No</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-6 text-xs sm:text-sm font-mono text-neutral-700 leading-relaxed pt-4 border-t border-[#141414]/15">
                 <div className="p-4 border border-[#141414]/10 bg-neutral-50">{t.compPastebin}</div>
                 <div className="p-4 border border-[#141414]/10 bg-neutral-50">{t.compAirDrop}</div>
                 <div className="p-4 border border-[#141414]/10 bg-neutral-50">{t.compSendAnywhere}</div>
