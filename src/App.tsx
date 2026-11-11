@@ -637,6 +637,25 @@ export default function App() {
       return;
     }
 
+    // If the URL is an unsigned Cloudflare R2 S3 link, automatically sign it on-demand
+    if (downloadUrl && downloadUrl.includes('cloudflarestorage.com') && !downloadUrl.includes('X-Amz-Signature')) {
+      try {
+        const signRes = await fetch('/api/get-download-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: downloadUrl, fileName })
+        });
+        if (signRes.ok) {
+          const signData = await signRes.json();
+          if (signData.downloadUrl) {
+            downloadUrl = signData.downloadUrl;
+          }
+        }
+      } catch (signErr) {
+        console.warn("On-demand signing notice, using direct link:", signErr);
+      }
+    }
+
     setStatus({ type: 'loading', message: `Downloading ${fileName}...` });
     try {
       const res = await fetch(downloadUrl);
@@ -663,6 +682,7 @@ export default function App() {
       a.style.display = 'none';
       a.href = downloadUrl;
       a.download = fileName || 'download';
+      a.target = '_blank';
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {

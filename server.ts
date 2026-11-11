@@ -10,7 +10,7 @@ import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import Stripe from "stripe";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import dotenv from "dotenv";
 
@@ -376,10 +376,19 @@ app.post("/api/get-upload-url", optionalVerifyToken, async (req, res) => {
 
       // Presigned URL valid for 15 minutes (900 seconds)
       const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 900 });
+
+      // Presigned GET download URL with attachment header (valid for 7 days)
+      const getCommand = new GetObjectCommand({
+        Bucket: bucketName,
+        Key: fileKey,
+        ResponseContentDisposition: `attachment; filename="${encodeURIComponent(sanitizedName)}"`,
+      });
+      const presignedDownloadUrl = await getSignedUrl(r2, getCommand, { expiresIn: 604800 });
+
       const publicDomain = process.env.R2_PUBLIC_DOMAIN || process.env.R2_DEV_URL || "";
       const publicUrl = publicDomain 
         ? `${publicDomain.replace(/\/$/, '')}/${fileKey}` 
-        : `/api/r2-proxy/${fileKey}`;
+        : presignedDownloadUrl;
 
       return res.json({ 
         directR2: true, 
@@ -394,6 +403,53 @@ app.post("/api/get-upload-url", optionalVerifyToken, async (req, res) => {
   } catch (err: any) {
     console.error("Presigned URL Generation Error:", err);
     res.status(500).json({ error: err.message || "Failed to generate presigned upload URL" });
+  }
+});
+
+// Endpoint to generate an on-demand presigned GET download URL for any R2 file
+app.all(["/api/get-download-url", "/api/download"], async (req, res) => {
+  try {
+    const keyParam = (req.query?.key || req.query?.fileKey || req.body?.key || req.body?.fileKey) as string;
+    const nameParam = (req.query?.fileName || req.query?.filename || req.body?.fileName || req.body?.filename) as string;
+    const urlParam = (req.query?.url || req.body?.url) as string;
+
+    let fileKey = keyParam;
+    if (!fileKey && urlParam) {
+      const match = urlParam.match(/clips\/[^?]+/);
+      if (match) fileKey = match[0];
+    }
+
+    if (!fileKey) {
+      return res.status(400).json({ error: "fileKey or url is required" });
+    }
+
+    const r2 = getR2Client();
+    let bucketName = process.env.R2_BUCKET_NAME || process.env.S3_BUCKET_NAME || "sendarro-uploads";
+    if (bucketName === "R2 User Token") bucketName = "sendarro-uploads";
+
+    if (!r2) {
+      return res.status(500).json({ error: "Storage client not available" });
+    }
+
+    const fileName = nameParam || fileKey.split('/').pop() || 'download';
+    const sanitizedName = String(fileName).replace(/[^a-zA-Z0-9_.-]/g, "_");
+
+    const getCommand = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: fileKey,
+      ResponseContentDisposition: `attachment; filename="${encodeURIComponent(sanitizedName)}"`,
+    });
+
+    const downloadUrl = await getSignedUrl(r2, getCommand, { expiresIn: 604800 });
+
+    if (req.query?.redirect === "true") {
+      return res.redirect(downloadUrl);
+    }
+
+    return res.json({ downloadUrl, fileKey, fileName: sanitizedName });
+  } catch (err: any) {
+    console.error("Get download URL error:", err);
+    return res.status(500).json({ error: err.message || "Failed to generate download URL" });
   }
 });
 

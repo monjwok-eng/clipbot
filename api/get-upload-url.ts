@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export default async function handler(req: any, res: any) {
@@ -45,18 +45,27 @@ export default async function handler(req: any, res: any) {
     const fileKey = `clips/${Date.now()}-${Math.round(Math.random() * 1e9)}-${sanitizedName}`;
     const contentType = fileType || "application/octet-stream";
 
-    const command = new PutObjectCommand({
+    const putCommand = new PutObjectCommand({
       Bucket: bucketName,
       Key: fileKey,
       ContentType: contentType,
     });
 
     // 15-minute presigned upload URL
-    const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 900 });
+    const uploadUrl = await getSignedUrl(r2, putCommand, { expiresIn: 900 });
+
+    // Generate authenticated presigned download URL with attachment header (valid for 7 days)
+    const getCommand = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: fileKey,
+      ResponseContentDisposition: `attachment; filename="${encodeURIComponent(sanitizedName)}"`,
+    });
+    const presignedDownloadUrl = await getSignedUrl(r2, getCommand, { expiresIn: 604800 });
+
     const publicDomain = process.env.R2_PUBLIC_DOMAIN || process.env.R2_DEV_URL || "";
     const publicUrl = publicDomain 
       ? `${publicDomain.replace(/\/$/, '')}/${fileKey}` 
-      : `https://${bucketName}.${accountId}.r2.cloudflarestorage.com/${fileKey}`;
+      : presignedDownloadUrl;
 
     return res.status(200).json({
       directR2: true,
