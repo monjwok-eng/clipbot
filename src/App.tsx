@@ -1469,8 +1469,16 @@ export default function App() {
               const res = await fetch('/api/get-upload-url', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fileName: file.name, fileType: file.type, fileSize: file.size })
+                body: JSON.stringify({ 
+                  fileName: file.name, 
+                  fileType: file.type || 'application/octet-stream', 
+                  fileSize: file.size 
+                })
               });
+              if (!res.ok) {
+                const text = await res.text().catch(() => '');
+                throw new Error(`get-upload-url returned ${res.status}: ${text.slice(0, 100)}`);
+              }
               const data = await res.json();
               if (!data.directR2 || !data.uploadUrl) {
                 throw new Error("R2 direct upload not configured");
@@ -1614,7 +1622,7 @@ export default function App() {
               return new Promise<any>((resolve, reject) => {
                 const storageTimeout = setTimeout(() => {
                   reject(new Error("Storage upload timed out. Please refresh or try again."));
-                }, 15000);
+                }, 300000); // 5 minute window for larger uploads
 
                 const fileRef = ref(storage, `clips/${code}/${file.name}`);
                 const uploadTask = uploadBytesResumable(fileRef, file);
@@ -1999,7 +2007,7 @@ export default function App() {
             return new Promise<any>((resolve, reject) => {
               const storageTimeout = setTimeout(() => {
                 reject(new Error("Storage upload timed out. Please refresh or try again."));
-              }, 15000);
+              }, 300000); // 5 minute window for larger uploads
 
               const fileRef = ref(storage, `clips/${targetCode}/submissions/${Date.now()}_${file.name}`);
               const uploadTask = uploadBytesResumable(fileRef, file);

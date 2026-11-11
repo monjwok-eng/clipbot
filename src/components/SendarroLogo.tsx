@@ -44,8 +44,7 @@ export const SendarroLogo: React.FC<SendarroLogoProps> = ({
       alt="Sendarro" 
       loading="eager"
       decoding="async"
-      // @ts-ignore
-      fetchpriority="high"
+      fetchPriority="high"
       onError={handleError}
       onClick={onClick}
       className={`object-contain transition-all ${className} ${onClick ? 'cursor-pointer' : ''}`} 
