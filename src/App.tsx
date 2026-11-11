@@ -74,6 +74,7 @@ import { ProductPage } from './components/ProductPage';
 import { PricingPage } from './components/PricingPage';
 import { SendarroLogo } from './components/SendarroLogo';
 import { openGoogleDrivePicker } from './utils/googleDrive';
+import { openDropboxChooser } from './utils/dropbox';
 
 // --- Types ---
 
@@ -800,6 +801,51 @@ export default function App() {
       );
     } catch (err: any) {
       setStatus({ type: 'error', message: err?.message || 'Could not open Google Drive.' });
+    }
+  };
+
+  const handleConnectDropbox = async (customKey?: string) => {
+    const key = customKey || localStorage.getItem('sendarro_dropbox_key') || (import.meta.env.VITE_DROPBOX_APP_KEY as string) || 'j9s5gbr2hthi45j';
+    if (!key) {
+      setActiveIntegration('dropbox');
+      setStatus({ type: 'error', message: 'Please enter your Dropbox App Key in the modal to connect.' });
+      return;
+    }
+
+    setStatus({ type: 'loading', message: 'Opening Dropbox...' });
+    try {
+      await openDropboxChooser(
+        key,
+        (pickedFiles) => {
+          const filesToAdd: File[] = [];
+          const linksToAdd: string[] = [];
+
+          pickedFiles.forEach(pf => {
+            if (pf.file) {
+              filesToAdd.push(pf.file);
+            } else if (pf.link) {
+              linksToAdd.push(pf.link);
+            }
+          });
+
+          if (filesToAdd.length > 0) {
+            addIncomingFiles(filesToAdd);
+            setStatus({ type: 'success', message: `Added ${filesToAdd.length} file(s) from Dropbox!` });
+          } else if (linksToAdd.length > 0) {
+            setManualText(prev => prev ? `${prev}\n${linksToAdd.join('\n')}` : linksToAdd.join('\n'));
+            setShareMode('text');
+            setStatus({ type: 'success', message: `Attached ${linksToAdd.length} Dropbox link(s)!` });
+          }
+        },
+        () => {
+          setStatus({ type: 'idle', message: '' });
+        },
+        (err) => {
+          setStatus({ type: 'error', message: err?.message || 'Dropbox selection cancelled or failed.' });
+        }
+      );
+    } catch (err: any) {
+      setStatus({ type: 'error', message: err?.message || 'Could not open Dropbox.' });
     }
   };
 
@@ -2301,13 +2347,15 @@ export default function App() {
             isOpen={!!activeIntegration} 
             onClose={() => setActiveIntegration(null)} 
             service={activeIntegration} 
-            onIntegrate={() => {
+            onIntegrate={(extraKey) => {
               const currentService = activeIntegration;
               setActiveIntegration(null);
               if (currentService === 'drive') {
                 handleConnectDrive();
+              } else if (currentService === 'dropbox') {
+                handleConnectDropbox(extraKey);
               } else {
-                const serviceName = currentService === 'dropbox' ? 'Dropbox' : 'iCloud';
+                const serviceName = currentService === 'icloud' ? 'iCloud' : 'Cloud';
                 setStatus({ type: 'success', message: `${serviceName} integration initiated!` });
               }
             }}
