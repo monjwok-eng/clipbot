@@ -453,6 +453,93 @@ app.all(["/api/get-download-url", "/api/download"], async (req, res) => {
   }
 });
 
+// Server-side Google Drive Document and File Exporter (prevents CORS & corrupt files)
+app.post("/api/export-drive-file", async (req, res) => {
+  res.setHeader("Access-Control-Expose-Headers", "X-File-Name, X-File-Type, Content-Disposition");
+  try {
+    const { fileId, accessToken, mimeType, fileName } = req.body || {};
+
+    if (!fileId || !accessToken) {
+      return res.status(400).json({ error: "fileId and accessToken are required" });
+    }
+
+    const isGoogleDoc = mimeType && mimeType.startsWith("application/vnd.google-apps.");
+
+    let targetUrl: string;
+    let targetMime = "application/octet-stream";
+    let targetExt = "";
+
+    if (isGoogleDoc) {
+      if (mimeType === "application/vnd.google-apps.document") {
+        targetMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        targetExt = ".docx";
+      } else if (mimeType === "application/vnd.google-apps.spreadsheet") {
+        targetMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        targetExt = ".xlsx";
+      } else if (mimeType === "application/vnd.google-apps.presentation") {
+        targetMime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        targetExt = ".pptx";
+      } else {
+        targetMime = "application/pdf";
+        targetExt = ".pdf";
+      }
+      targetUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(targetMime)}`;
+    } else {
+      targetUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+      targetMime = mimeType || "application/octet-stream";
+    }
+
+    let gRes = await fetch(targetUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      redirect: "follow",
+    });
+
+    if (!gRes.ok && isGoogleDoc && targetMime !== "application/pdf") {
+      targetMime = "application/pdf";
+      targetExt = ".pdf";
+      targetUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=application/pdf`;
+      gRes = await fetch(targetUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        redirect: "follow",
+      });
+    }
+
+    if (!gRes.ok) {
+      const errText = await gRes.text().catch(() => "");
+      return res.status(gRes.status).json({
+        error: `Google Drive returned HTTP ${gRes.status}: ${errText.slice(0, 300)}`
+      });
+    }
+
+    const arrayBuffer = await gRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const firstChars = buffer.subarray(0, 30).toString("utf8").trim();
+    if (firstChars.startsWith("<!DOCTYPE") || firstChars.startsWith("<html") || firstChars.startsWith('{"error"')) {
+      return res.status(400).json({
+        error: `Invalid file content received from Google Drive: ${buffer.subarray(0, 200).toString("utf8")}`
+      });
+    }
+
+    let finalName = fileName || "google-document";
+    if (targetExt && !finalName.toLowerCase().endsWith(targetExt)) {
+      finalName = `${finalName}${targetExt}`;
+    }
+    const sanitizedName = String(finalName).replace(/[^a-zA-Z0-9_.-]/g, "_");
+
+    res.setHeader("Content-Type", targetMime);
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(sanitizedName)}"`);
+    res.setHeader("X-File-Name", encodeURIComponent(sanitizedName));
+    res.setHeader("X-File-Type", targetMime);
+
+    return res.status(200).send(buffer);
+  } catch (err: any) {
+    console.error("export-drive-file error:", err);
+    return res.status(500).json({ error: err.message || "Failed to export Google Drive file" });
+  }
+});
+
 // Direct server-hosted file upload endpoint (NO Firebase Storage required)
 app.post("/api/upload", optionalVerifyToken, upload.array("files", 10), async (req, res) => {
   try {

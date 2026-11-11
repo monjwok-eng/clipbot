@@ -47,18 +47,3 @@ export const DropboxIcon: React.FC<{ className?: string }> = ({ className = "w-5
     />
   </svg>
 );
-
-export const ICloudIcon: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
-  <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="icloudGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#41A4F5" />
-        <stop offset="100%" stopColor="#1976D2" />
-      </linearGradient>
-    </defs>
-    <path
-      d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"
-      fill="url(#icloudGrad)"
-    />
-  </svg>
-);

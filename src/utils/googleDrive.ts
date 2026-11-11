@@ -98,69 +98,40 @@ export async function openGoogleDrivePicker(
         const mimeType = doc.mimeType || 'application/octet-stream';
 
         try {
-          // If this is a Google Docs/Sheets/Slides file, export it as a real document file (.docx / .xlsx / .pptx)
-          if (GOOGLE_DOCS_EXPORT_MAP[mimeType]) {
-            const exportConfig = GOOGLE_DOCS_EXPORT_MAP[mimeType];
-            const exportUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportConfig.mimeType)}`;
-            
-            let res = await fetch(exportUrl, {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            });
-
-            // If primary format fails, export as universal PDF
-            if (!res.ok) {
-              const pdfUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=application/pdf`;
-              res = await fetch(pdfUrl, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-              });
-
-              if (res.ok) {
-                const blob = await res.blob();
-                const finalName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
-                const nativeFile = new File([blob], finalName, { type: 'application/pdf' });
-                onSelect({
-                  id: fileId,
-                  name: finalName,
-                  mimeType: 'application/pdf',
-                  sizeBytes: blob.size,
-                  file: nativeFile,
-                });
-                return;
-              }
-            } else {
-              const blob = await res.blob();
-              const finalName = fileName.toLowerCase().endsWith(exportConfig.ext) ? fileName : `${fileName}${exportConfig.ext}`;
-              const nativeFile = new File([blob], finalName, { type: exportConfig.mimeType });
-              onSelect({
-                id: fileId,
-                name: finalName,
-                mimeType: exportConfig.mimeType,
-                sizeBytes: blob.size,
-                file: nativeFile,
-              });
-              return;
-            }
-          }
-
-          // Regular binary file (PDF, Word, image, audio, zip, etc.) — fetch full media content
-          const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
+          const exportRes = await fetch('/api/export-drive-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileId,
+              accessToken,
+              mimeType,
+              fileName,
+            }),
           });
 
-          if (res.ok) {
-            const blob = await res.blob();
-            const nativeFile = new File([blob], fileName, { type: mimeType });
+          if (exportRes.ok) {
+            const blob = await exportRes.blob();
+            const serverFileName = exportRes.headers.get('X-File-Name')
+              ? decodeURIComponent(exportRes.headers.get('X-File-Name')!)
+              : fileName;
+            const serverFileType = exportRes.headers.get('X-File-Type')
+              || exportRes.headers.get('Content-Type')
+              || mimeType;
+
+            const nativeFile = new File([blob], serverFileName, { type: serverFileType });
             onSelect({
               id: fileId,
-              name: fileName,
-              mimeType,
+              name: serverFileName,
+              mimeType: serverFileType,
               sizeBytes: blob.size,
               file: nativeFile,
             });
             return;
           }
 
-          // Fallback only if Google Drive completely blocks export
+          const errJson = await exportRes.json().catch(() => ({}));
+          console.warn('Server export reported issue, falling back to link:', errJson);
+
           onSelect({
             id: fileId,
             name: fileName,

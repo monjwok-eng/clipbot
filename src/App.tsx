@@ -69,7 +69,7 @@ import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, UploadTask } fr
 import { db, auth, storage } from './firebase';
 import { Onboarding } from './components/Onboarding';
 import { IntegrationModal } from './components/IntegrationModal';
-import { GoogleDriveIcon, DropboxIcon, ICloudIcon } from './components/CloudIcons';
+import { GoogleDriveIcon, DropboxIcon } from './components/CloudIcons';
 import { ProductPage } from './components/ProductPage';
 import { PricingPage } from './components/PricingPage';
 import { SendarroLogo } from './components/SendarroLogo';
@@ -663,7 +663,19 @@ export default function App() {
       const res = await fetch(downloadUrl);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
+      let resolvedBlob = blob;
+      if (!blob.type || blob.type === 'application/octet-stream') {
+        const ext = (fileName || '').split('.').pop()?.toLowerCase();
+        let mime = blob.type;
+        if (ext === 'pdf') mime = 'application/pdf';
+        else if (ext === 'docx') mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        else if (ext === 'xlsx') mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        else if (ext === 'pptx') mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+        if (mime && mime !== blob.type) {
+          resolvedBlob = new Blob([blob], { type: mime });
+        }
+      }
+      const blobUrl = window.URL.createObjectURL(resolvedBlob);
       
       const a = document.createElement('a');
       a.style.display = 'none';
@@ -973,7 +985,7 @@ export default function App() {
   const isPro = isRealUser && (effectiveTier === 'pro' || effectiveTier === 'promax');
   const isProMax = isRealUser && effectiveTier === 'promax';
 
-  const handleCloudServiceClick = (service: 'drive' | 'dropbox' | 'icloud') => {
+  const handleCloudServiceClick = (service: 'drive' | 'dropbox') => {
     if (!isRealUser) {
       setShowLoginModal(true);
       return;
@@ -1055,15 +1067,10 @@ export default function App() {
           }
         }
 
-        if (!localStorage.getItem('hasShownPaywall')) {
-          setShowProModal(true);
-          localStorage.setItem('hasShownPaywall', 'true');
-        }
       } else {
         setIsGuest(true);
         setTierState('free');
         localStorage.removeItem('clipcloud_user_tier');
-        localStorage.removeItem('hasShownPaywall');
         setHasDismissedFree(false);
       }
     });
@@ -2264,10 +2271,9 @@ export default function App() {
             <div className="flex items-center gap-4">
               {tier !== 'promax' && (
                 <button 
-                  onClick={() => setShowProModal(true)}
-                  className="bg-emerald-500 text-black text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full hover:bg-emerald-400 transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer"
+                  onClick={() => setCurrentView('pricing')}
+                  className="text-emerald-600 dark:text-emerald-500 hover:text-emerald-500 text-xs sm:text-sm font-bold uppercase tracking-wider underline underline-offset-4 transition-colors cursor-pointer"
                 >
-                  <Zap className="w-3 h-3" />
                   {tier === 'pro' ? 'Go Pro Max' : 'Upgrade'}
                 </button>
               )}
@@ -2363,7 +2369,7 @@ export default function App() {
             isOpen={!!activeIntegration} 
             onClose={() => setActiveIntegration(null)} 
             service={activeIntegration} 
-            onIntegrate={(extraKey) => {
+            onIntegrate={() => {
               const currentService = activeIntegration;
               setActiveIntegration(null);
               if (currentService === 'drive') {
@@ -2371,10 +2377,7 @@ export default function App() {
                 handleConnectDrive();
               } else if (currentService === 'dropbox') {
                 localStorage.setItem('sendarro_dropbox_connected', 'true');
-                handleConnectDropbox(extraKey);
-              } else {
-                const serviceName = currentService === 'icloud' ? 'iCloud' : 'Cloud';
-                setStatus({ type: 'success', message: `${serviceName} integration initiated!` });
+                handleConnectDropbox();
               }
             }}
           />
@@ -2698,14 +2701,6 @@ export default function App() {
                             >
                               <DropboxIcon className="w-4 h-4" />
                               <span>Dropbox</span>
-                            </button>
-                            <button 
-                              type="button" 
-                              onClick={() => handleCloudServiceClick('icloud')} 
-                              className="flex-1 py-2 px-2.5 border border-[#141414] rounded-sm bg-white hover:bg-neutral-100 flex items-center justify-center gap-2 text-[11px] font-mono font-bold transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
-                            >
-                              <ICloudIcon className="w-4 h-4" />
-                              <span>iCloud</span>
                             </button>
                           </div>
                         </div>
@@ -3276,7 +3271,7 @@ export default function App() {
                 </div>
                 {status.message.includes('[Upgrade Now]') && (
                   <button 
-                    onClick={() => setShowProModal(true)}
+                    onClick={() => setCurrentView('pricing')}
                     className="bg-red-800 text-white px-3 py-1.5 rounded-sm hover:bg-red-700 transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 cursor-pointer"
                   >
                     Upgrade Now
@@ -3334,179 +3329,10 @@ export default function App() {
            style={{ backgroundImage: 'radial-gradient(#141414 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
       </div>
 
-      {/* Pro Modal - Brutalist Subscription Redesign */}
-      <AnimatePresence>
-        {showProModal && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 bg-[#141414]/40 backdrop-blur-md overflow-y-auto"
-          >
-            <motion.div 
-              initial={{ scale: 0.95, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 20 }}
-              className="bg-[#E4E3E0] border-2 border-[#141414] w-full max-w-4xl rounded-sm shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] relative overflow-hidden"
-            >
-              <button 
-                onClick={() => setShowProModal(false)}
-                className="absolute top-4 right-4 p-2 hover:bg-[#141414]/5 rounded-sm transition-colors z-10"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className="p-6 md:p-8 border-b-2 border-[#141414] bg-white/30">
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 bg-[#141414] rounded-sm flex items-center justify-center">
-                        <Zap className="w-3 h-3 text-emerald-400" />
-                      </div>
-                      <span className="text-[10px] uppercase tracking-[0.3em] font-bold text-[#141414]">Subscription Tiers</span>
-                    </div>
-                    <h2 className="text-4xl font-serif italic leading-[0.85] tracking-tighter text-[#141414]">
-                      Choose your<br />power level.
-                    </h2>
-                  </div>
-                  <p className="text-xs text-neutral-700 font-normal leading-relaxed max-w-[240px]">
-                    From casual sharing to professional-grade transfer.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-3 divide-y-2 md:divide-y-0 md:divide-x-2 divide-[#141414] overflow-y-auto max-h-[70vh]">
-                {/* Free Tier */}
-                <div className="p-6 space-y-6 flex flex-col justify-between">
-                  <div className="space-y-4">
-                    <div className="space-y-1">
-                      <h3 className="text-lg font-bold uppercase tracking-tighter text-[#141414]">Free</h3>
-                      <p className="text-xs text-neutral-600 uppercase tracking-wider font-bold">Casual Use</p>
-                    </div>
-                    <div className="text-3xl font-serif italic text-[#141414]">$0</div>
-                    <ul className="space-y-2.5">
-                      {[
-                        "8-Character Codes",
-                        "10k Character Limit",
-                        "60s Persistence",
-                        "Instant Direct Retrieval",
-                        "File Sharing (Up to 10MB)"
-                      ].map((f, i) => (
-                        <li key={i} className="flex gap-2 items-center text-xs text-neutral-800 font-medium">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  {!hasDismissedFree && user && tier === 'free' && (
-                    <button 
-                      onClick={() => {
-                        setHasDismissedFree(true);
-                        setShowProModal(false);
-                      }}
-                      className="w-full border-2 border-[#141414] py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] hover:bg-[#141414] hover:text-[#E4E3E0] transition-all cursor-pointer"
-                    >
-                      Current Plan
-                    </button>
-                  )}
-                </div>
-
-                {/* Pro Tier */}
-                <div className="p-6 space-y-6 flex flex-col justify-between bg-white/40">
-                  <div className="space-y-4">
-                    <div className="space-y-1">
-                      <h3 className="text-lg font-bold uppercase tracking-tighter text-emerald-700">Pro</h3>
-                      <p className="text-xs text-emerald-700 uppercase tracking-wider font-bold">Power User</p>
-                    </div>
-                    <div className="text-3xl font-serif italic text-[#141414]">$4.99<span className="text-xs text-neutral-600 italic">/mo</span></div>
-                    <ul className="space-y-2.5">
-                      {[
-                        "5+ Character Custom Codes",
-                        "100k Character Limit",
-                        "24h Persistence",
-                        "Instant Retrieval",
-                        "Priority Sync",
-                        "File Sharing (Up to 50MB)"
-                      ].map((f, i) => (
-                        <li key={i} className="flex gap-2 items-center text-xs text-neutral-800 font-medium">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <button 
-                    onClick={() => handleCheckout('https://buy.stripe.com/test_5kQ4gz8Yycn1dzN8nebwk00')}
-                    className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all cursor-pointer ${
-                      tier === 'pro' 
-                        ? 'bg-emerald-500 text-black cursor-default' 
-                        : 'bg-[#141414] text-[#E4E3E0] hover:shadow-[3px_3px_0px_0px_rgba(16,185,129,1)] hover:translate-x-[-1px] hover:translate-y-[-1px]'
-                    }`}
-                  >
-                    {tier === 'pro' ? 'Active' : tier === 'promax' ? 'Downgrade' : 'Upgrade to Pro'}
-                  </button>
-                </div>
-
-                {/* Pro Max Tier */}
-                <div className="p-6 space-y-6 flex flex-col justify-between bg-[#141414] text-[#E4E3E0]">
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <h3 className="text-lg font-bold uppercase tracking-tighter text-blue-400">Pro Max</h3>
-                        <p className="text-xs text-blue-300 uppercase tracking-wider font-bold">Elite Professional</p>
-                      </div>
-                      <div className="bg-blue-500 text-black text-[7px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-widest">Best Value</div>
-                    </div>
-                    <div className="text-3xl font-serif italic">$9.99<span className="text-xs text-neutral-300 italic">/mo</span></div>
-                    <ul className="space-y-2.5">
-                      {[
-                        "3-4 Character Short Codes",
-                        "Collection Drop Box (Team Inbox)",
-                        "Locked Vault (7-Day Recovery)",
-                        "Pro Max Insurance",
-                        "Unlimited File Sharing (Max 1GB)"
-                      ].map((f, i) => (
-                        <li key={i} className="flex gap-2 items-center text-xs text-neutral-200 font-medium">
-                          <Zap className="w-3.5 h-3.5 text-blue-400 fill-blue-400 shrink-0" />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <button 
-                    onClick={() => handleCheckout('https://buy.stripe.com/test_6oU14ngr072HdzN6f6bwk01')}
-                    className={`w-full py-3 rounded-sm font-bold uppercase tracking-widest text-[9px] transition-all cursor-pointer ${
-                      tier === 'promax' 
-                        ? 'bg-blue-500 text-black cursor-default' 
-                        : 'bg-white text-[#141414] hover:shadow-[3px_3px_0px_0px_rgba(59,130,246,1)] hover:translate-x-[-1px] hover:translate-y-[-1px]'
-                    }`}
-                  >
-                    {tier === 'promax' ? 'Active' : 'Get Pro Max'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-4 bg-[#141414]/5 border-t-2 border-[#141414] flex flex-col md:flex-row items-center justify-between gap-2">
-                <div className="flex items-center gap-3 text-neutral-700">
-                  <ShieldCheck className="w-4 h-4 text-neutral-800" />
-                  <span className="text-[9px] uppercase tracking-[0.2em] font-bold text-neutral-800">Enterprise-Grade Security</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  {!user && (
-                    <button 
-                      onClick={() => handleLogin()}
-                      className="text-xs font-bold uppercase tracking-wider underline underline-offset-4 text-neutral-800 hover:text-emerald-700 cursor-pointer"
-                    >
-                      Login to see your personalized offers
-                    </button>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Background Grid Accent */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-[-1]" 
+           style={{ backgroundImage: 'radial-gradient(#141414 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+      </div>
 
       {/* Modals & Overlays */}
       <AnimatePresence>
