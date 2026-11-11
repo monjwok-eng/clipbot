@@ -73,6 +73,7 @@ import { GoogleDriveIcon, DropboxIcon, ICloudIcon } from './components/CloudIcon
 import { ProductPage } from './components/ProductPage';
 import { PricingPage } from './components/PricingPage';
 import { SendarroLogo } from './components/SendarroLogo';
+import { openGoogleDrivePicker } from './utils/googleDrive';
 
 // --- Types ---
 
@@ -779,6 +780,29 @@ export default function App() {
     localStorage.setItem('recentCodes', JSON.stringify(updated));
   };
 
+  const handleConnectDrive = async () => {
+    setStatus({ type: 'loading', message: 'Opening Google Drive...' });
+    try {
+      await openGoogleDrivePicker(
+        (picked) => {
+          if (picked.file) {
+            addIncomingFiles([picked.file]);
+            setStatus({ type: 'success', message: `Added ${picked.name} from Google Drive!` });
+          } else if (picked.url) {
+            setManualText(prev => prev ? `${prev}\n${picked.url}` : picked.url!);
+            setShareMode('text');
+            setStatus({ type: 'success', message: `Attached Google Drive link for ${picked.name}!` });
+          }
+        },
+        (err) => {
+          setStatus({ type: 'error', message: err?.message || 'Google Drive selection cancelled or failed.' });
+        }
+      );
+    } catch (err: any) {
+      setStatus({ type: 'error', message: err?.message || 'Could not open Google Drive.' });
+    }
+  };
+
   const handleCheckout = async (target: string) => {
     if (!user) {
       setShowLoginModal(true);
@@ -901,6 +925,14 @@ export default function App() {
   const effectiveTier = isRealUser ? tier : 'free';
   const isPro = isRealUser && (effectiveTier === 'pro' || effectiveTier === 'promax');
   const isProMax = isRealUser && effectiveTier === 'promax';
+
+  const handleCloudServiceClick = (service: 'drive' | 'dropbox' | 'icloud') => {
+    if (!isRealUser) {
+      setShowLoginModal(true);
+      return;
+    }
+    setActiveIntegration(service);
+  };
 
   useEffect(() => {
     if (!isProMax && shareMode === 'collection') {
@@ -2270,9 +2302,14 @@ export default function App() {
             onClose={() => setActiveIntegration(null)} 
             service={activeIntegration} 
             onIntegrate={() => {
-              const serviceName = activeIntegration === 'drive' ? 'Google Drive' : activeIntegration === 'dropbox' ? 'Dropbox' : 'iCloud';
+              const currentService = activeIntegration;
               setActiveIntegration(null);
-              setStatus({ type: 'success', message: `${serviceName} integration initiated!` });
+              if (currentService === 'drive') {
+                handleConnectDrive();
+              } else {
+                const serviceName = currentService === 'dropbox' ? 'Dropbox' : 'iCloud';
+                setStatus({ type: 'success', message: `${serviceName} integration initiated!` });
+              }
             }}
           />
 
@@ -2582,7 +2619,7 @@ export default function App() {
                           <div className="flex gap-2">
                             <button 
                               type="button" 
-                              onClick={() => setActiveIntegration('drive')} 
+                              onClick={() => handleCloudServiceClick('drive')} 
                               className="flex-1 py-2 px-2.5 border border-[#141414] rounded-sm bg-white hover:bg-neutral-100 flex items-center justify-center gap-2 text-[11px] font-mono font-bold transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
                             >
                               <GoogleDriveIcon className="w-4 h-4" />
@@ -2590,7 +2627,7 @@ export default function App() {
                             </button>
                             <button 
                               type="button" 
-                              onClick={() => setActiveIntegration('dropbox')} 
+                              onClick={() => handleCloudServiceClick('dropbox')} 
                               className="flex-1 py-2 px-2.5 border border-[#141414] rounded-sm bg-white hover:bg-neutral-100 flex items-center justify-center gap-2 text-[11px] font-mono font-bold transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
                             >
                               <DropboxIcon className="w-4 h-4" />
@@ -2598,7 +2635,7 @@ export default function App() {
                             </button>
                             <button 
                               type="button" 
-                              onClick={() => setActiveIntegration('icloud')} 
+                              onClick={() => handleCloudServiceClick('icloud')} 
                               className="flex-1 py-2 px-2.5 border border-[#141414] rounded-sm bg-white hover:bg-neutral-100 flex items-center justify-center gap-2 text-[11px] font-mono font-bold transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
                             >
                               <ICloudIcon className="w-4 h-4" />
