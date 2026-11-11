@@ -75,6 +75,8 @@ import { PricingPage } from './components/PricingPage';
 import { SendarroLogo } from './components/SendarroLogo';
 import { openGoogleDrivePicker } from './utils/googleDrive';
 import { openDropboxChooser } from './utils/dropbox';
+import { getInitialLanguage, translations, LanguageCode, setAppLanguage } from './utils/i18n';
+import { LanguageSelector } from './components/LanguageSelector';
 
 // --- Types ---
 
@@ -511,6 +513,12 @@ export default function App() {
   const [showCookieBanner, setShowCookieBanner] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [currentView, setCurrentView] = useState<'app' | 'product' | 'pricing'>('app');
+  const [currentLang, setCurrentLang] = useState<LanguageCode>(getInitialLanguage);
+  const t = translations[currentLang] || translations.en;
+
+  useEffect(() => {
+    setAppLanguage(currentLang);
+  }, [currentLang]);
   const [activeIntegration, setActiveIntegration] = useState<string | null>(null);
   useEffect(() => {
     if (showLoginModal) {
@@ -2257,22 +2265,23 @@ export default function App() {
             onClick={() => setCurrentView('product')} 
             className={`hover:text-black transition-colors cursor-pointer ${currentView === 'product' ? 'underline underline-offset-8 text-black font-semibold' : 'text-neutral-700'}`}
           >
-            Product
+            {t.product}
           </button>
           <button 
             onClick={() => setCurrentView('pricing')} 
             className={`hover:text-black transition-colors cursor-pointer ${currentView === 'pricing' ? 'underline underline-offset-8 text-black font-semibold' : 'text-neutral-700'}`}
           >
-            Pricing
+            {t.pricing}
           </button>
         </nav>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <LanguageSelector currentLang={currentLang} onLanguageChange={setCurrentLang} />
           {user ? (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
               {tier !== 'promax' && (
                 <button 
                   onClick={() => setCurrentView('pricing')}
-                  className="text-emerald-600 dark:text-emerald-500 hover:text-emerald-500 text-xs sm:text-sm font-bold uppercase tracking-wider underline underline-offset-4 transition-colors cursor-pointer"
+                  className="text-[#141414] hover:text-black text-xs sm:text-sm font-semibold underline decoration-emerald-500 decoration-2 underline-offset-4 transition-colors cursor-pointer"
                 >
                   {tier === 'pro' ? 'Go Pro Max' : 'Upgrade'}
                 </button>
@@ -2306,7 +2315,7 @@ export default function App() {
                 <button 
                   onClick={handleLogout}
                   className="ml-1 p-2 border border-transparent hover:border-[#141414] hover:bg-white rounded-sm transition-all group cursor-pointer"
-                  title="Logout"
+                  title={t.logout}
                 >
                   <X className="w-4 h-4 text-neutral-600 group-hover:text-neutral-900 transition-colors" />
                 </button>
@@ -2318,7 +2327,7 @@ export default function App() {
                 onClick={() => setShowLoginModal(true)}
                 className="text-[10px] sm:text-xs md:text-sm font-bold uppercase tracking-wider border-b-2 border-[#141414] pb-0.5 hover:text-neutral-600 transition-colors whitespace-nowrap cursor-pointer text-center"
               >
-                Login for Pro
+                {t.login}
               </button>
             </div>
           )}
@@ -3288,36 +3297,37 @@ export default function App() {
         <div className="max-w-4xl mx-auto space-y-6 lg:space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
             <div className="space-y-1.5">
-              <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">Security</p>
-              <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed font-normal">End-to-end encrypted logic. Clips are automatically purged after expiration.</p>
+              <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">{t.securityTitle}</p>
+              <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed font-normal">{t.securityDesc}</p>
             </div>
             <div className="space-y-1.5">
-              <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">Universal</p>
-              <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed font-normal">Works on any device with a browser. No app installation required.</p>
+              <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">{t.universalTitle}</p>
+              <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed font-normal">{t.universalDesc}</p>
             </div>
             <div className="space-y-1.5">
-              <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">Speed</p>
-              <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed font-normal">Optimized for instant transfers. 8-character codes for maximum efficiency.</p>
+              <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-[#141414]">{t.speedTitle}</p>
+              <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed font-normal">{t.speedDesc}</p>
             </div>
           </div>
 
           <div className="pt-6 border-t border-[#141414]/15 flex flex-col sm:flex-row justify-between items-center gap-3">
-            <div className="flex items-center gap-2 text-neutral-700">
+            <div className="flex items-center gap-3 text-neutral-700">
               <Share2 className="w-3.5 h-3.5 text-neutral-800" />
               <span className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.15em] text-neutral-800">Sendarro v2.5</span>
             </div>
-            <div className="flex items-center gap-5">
+            <div className="flex items-center gap-4 flex-wrap justify-center">
+              <LanguageSelector currentLang={currentLang} onLanguageChange={setCurrentLang} compact />
               <button 
                 onClick={() => setShowOnboarding(true)}
                 className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-neutral-600 hover:text-neutral-950 transition-colors underline underline-offset-4 cursor-pointer"
               >
-                How it works
+                {t.howItWorks}
               </button>
               <button 
                 onClick={() => setShowLegalModal(true)}
                 className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-neutral-600 hover:text-neutral-950 transition-colors underline underline-offset-4 cursor-pointer"
               >
-                Privacy & Terms
+                {t.privacyTerms}
               </button>
             </div>
           </div>
