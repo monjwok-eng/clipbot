@@ -999,17 +999,9 @@ export default function App() {
       return;
     }
     if (service === 'drive') {
-      const isDriveConnected = localStorage.getItem('sendarro_drive_connected') === 'true';
-      if (isDriveConnected) {
-        handleConnectDrive();
-        return;
-      }
+      handleConnectDrive();
     } else if (service === 'dropbox') {
-      const isDropboxConnected = localStorage.getItem('sendarro_dropbox_connected') === 'true';
-      if (isDropboxConnected) {
-        handleConnectDropbox();
-        return;
-      }
+      handleConnectDropbox();
     }
     setActiveIntegration(service);
   };
@@ -3259,18 +3251,32 @@ export default function App() {
         </div>
           {/* Status Messages */}
           <AnimatePresence>
-            {status.message && status.type !== 'loading' && (
+            {status.message && (
               <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                className={`absolute bottom-2 sm:bottom-4 left-2 sm:left-4 right-2 sm:right-4 p-3 border-2 flex flex-col sm:flex-row items-center gap-3 text-xs font-bold uppercase tracking-wider rounded-sm z-50 ${
-                  status.type === 'success' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-red-50 border-red-300 text-red-800'
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                onDragEnd={(event, info) => {
+                  if (Math.abs(info.offset.x) > 100) {
+                    setStatus({ type: 'idle', message: '' });
+                  }
+                }}
+                initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className={`fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 p-4 border-2 rounded-none shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] z-[100] cursor-grab active:cursor-grabbing ${
+                  status.type === 'success' ? 'bg-white border-[#141414] text-[#141414]' : 
+                  status.type === 'loading' ? 'bg-white border-[#141414] text-[#141414]' : 'bg-[#141414] border-red-500 text-white'
                 }`}
               >
-                <div className="flex items-center gap-3 w-full">
-                  {status.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" /> : <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />}
-                  <span className="flex-1">{status.message.replace('[Upgrade Now]', '')}</span>
+                <div className="flex items-start gap-3 w-full">
+                  {status.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-500" /> : 
+                   status.type === 'loading' ? <RefreshCw className="w-5 h-5 shrink-0 text-neutral-400 animate-spin" /> : 
+                   <AlertCircle className="w-5 h-5 shrink-0 text-red-500" />}
+                  <span className="flex-1 text-xs font-bold uppercase tracking-widest">{status.message.replace('[Upgrade Now]', '')}</span>
+                  <button onClick={() => setStatus({ type: 'idle', message: '' })} className={`${status.type === 'loading' ? 'text-neutral-400' : 'text-[#141414]/50'} hover:text-[#141414] cursor-pointer`}>
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
                   {status.type === 'error' && status.message.includes('new tab') && (
                     <button 
                       onClick={() => window.open(window.location.href, '_blank')}
@@ -3279,15 +3285,14 @@ export default function App() {
                       Open in New Tab
                     </button>
                   )}
-                </div>
-                {status.message.includes('[Upgrade Now]') && (
-                  <button 
-                    onClick={() => setCurrentView('pricing')}
-                    className="bg-red-800 text-white px-3 py-1.5 rounded-sm hover:bg-red-700 transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 cursor-pointer"
-                  >
-                    Upgrade Now
-                  </button>
-                )}
+                  {status.message.includes('[Upgrade Now]') && (
+                    <button 
+                      onClick={() => setCurrentView('pricing')}
+                      className="bg-red-800 text-white px-3 py-1.5 rounded-sm hover:bg-red-700 transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 cursor-pointer"
+                    >
+                      Upgrade Now
+                    </button>
+                  )}
               </motion.div>
             )}
           </AnimatePresence>
