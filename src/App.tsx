@@ -786,6 +786,7 @@ export default function App() {
     try {
       await openGoogleDrivePicker(
         (picked) => {
+          localStorage.setItem('sendarro_drive_connected', 'true');
           if (picked.file) {
             addIncomingFiles([picked.file]);
             setStatus({ type: 'success', message: `Added ${picked.name} from Google Drive!` });
@@ -977,6 +978,19 @@ export default function App() {
       setShowLoginModal(true);
       return;
     }
+    if (service === 'drive') {
+      const isDriveConnected = localStorage.getItem('sendarro_drive_connected') === 'true';
+      if (isDriveConnected) {
+        handleConnectDrive();
+        return;
+      }
+    } else if (service === 'dropbox') {
+      const isDropboxConnected = localStorage.getItem('sendarro_dropbox_connected') === 'true';
+      if (isDropboxConnected) {
+        handleConnectDropbox();
+        return;
+      }
+    }
     setActiveIntegration(service);
   };
 
@@ -1151,6 +1165,8 @@ export default function App() {
       setIsGuest(false);
       setTierState('free');
       localStorage.removeItem('clipcloud_user_tier');
+      localStorage.removeItem('sendarro_drive_connected');
+      localStorage.removeItem('sendarro_dropbox_connected');
     } catch (err) {
       console.error(err);
     }
@@ -2351,8 +2367,10 @@ export default function App() {
               const currentService = activeIntegration;
               setActiveIntegration(null);
               if (currentService === 'drive') {
+                localStorage.setItem('sendarro_drive_connected', 'true');
                 handleConnectDrive();
               } else if (currentService === 'dropbox') {
+                localStorage.setItem('sendarro_dropbox_connected', 'true');
                 handleConnectDropbox(extraKey);
               } else {
                 const serviceName = currentService === 'icloud' ? 'iCloud' : 'Cloud';
