@@ -40,14 +40,16 @@ service cloud.firestore {
              data.createdAt is timestamp &&
              data.expiresAt is timestamp &&
              (data.get('submissionDeadline', null) == null || data.submissionDeadline is timestamp) &&
+             (data.get('maxSubmissions', null) == null || data.maxSubmissions is int) &&
              (data.authorUid == null || data.authorUid is string);
     }
 
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'email', 'tier']) &&
              data.uid == request.auth.uid &&
-             data.tier in ['guest', 'pro', 'promax'] &&
+             data.tier in ['free', 'guest', 'pro', 'promax'] &&
              (data.onboardingSeen == null || data.onboardingSeen is bool) &&
+             (data.get('trialCollectionsUsed', null) == null || data.trialCollectionsUsed is int) &&
              (data.apiKey == null || data.apiKey is string);
     }
 
@@ -80,7 +82,9 @@ service cloud.firestore {
                       (resource.data.get('isCollection', false) == true &&
                        (resource.data.get('submissionDeadline', null) == null || (resource.data.submissionDeadline is timestamp && request.time <= resource.data.submissionDeadline)) &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['submissions', 'submissionCount']) &&
-                       request.resource.data.submissions is list) ||
+                       request.resource.data.submissions is list &&
+                       (resource.data.get('tier', 'free') == 'promax' || request.resource.data.submissions.size() <= 5) &&
+                       (resource.data.get('maxSubmissions', 0) == 0 || request.resource.data.submissions.size() <= resource.data.maxSubmissions)) ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['expiresAt']) && 
                        request.resource.data.expiresAt == request.time) ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']) &&
@@ -91,6 +95,11 @@ service cloud.firestore {
                        request.resource.data.retrievedAt == request.time);
       allow delete: if true; // Allow clip deletion upon single-use redemption or expiration
       allow list: if true; // Allows the authorized query
+
+      match /private/{docId} {
+        allow read, write: if isAuthenticated() &&
+          get(/databases/$(database)/documents/clips/$(code)).data.authorUid == request.auth.uid;
+      }
     }
 
     match /users/{userId} {

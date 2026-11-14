@@ -109,3 +109,57 @@ export async function openDropboxChooser(
     if (onError) onError(err);
   }
 }
+
+export interface DropboxSaveFile {
+  url: string;
+  filename: string;
+}
+
+// Launch the official Dropbox Saver Drop-in to save files cloud-to-cloud directly to Dropbox
+export async function openDropboxSaver(
+  appKey: string = DEFAULT_DROPBOX_APP_KEY,
+  files: DropboxSaveFile[],
+  callbacks?: {
+    onSuccess?: () => void;
+    onProgress?: (progress: number) => void;
+    onCancel?: () => void;
+    onError?: (errorMessage: string) => void;
+  }
+): Promise<void> {
+  if (!files || files.length === 0) {
+    callbacks?.onError?.('No files available to save to Dropbox.');
+    return;
+  }
+
+  const effectiveKey = (appKey && appKey.trim()) || (import.meta as any).env?.VITE_DROPBOX_APP_KEY || DEFAULT_DROPBOX_APP_KEY;
+
+  try {
+    if (!window.Dropbox || !window.Dropbox.save) {
+      await loadDropboxScript(effectiveKey);
+    }
+
+    if (!window.Dropbox || !window.Dropbox.save) {
+      throw new Error('Dropbox Saver could not be initialized');
+    }
+
+    window.Dropbox.save({
+      files,
+      success: () => {
+        callbacks?.onSuccess?.();
+      },
+      progress: (progress: number) => {
+        callbacks?.onProgress?.(progress);
+      },
+      cancel: () => {
+        callbacks?.onCancel?.();
+      },
+      error: (errorMessage: string) => {
+        callbacks?.onError?.(errorMessage || 'Failed to save files to Dropbox.');
+      },
+    });
+  } catch (err: any) {
+    console.error('Dropbox Saver error:', err);
+    callbacks?.onError?.(err?.message || 'Could not launch Dropbox Saver.');
+  }
+}
+

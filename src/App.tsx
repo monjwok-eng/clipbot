@@ -26,14 +26,15 @@ import {
   Music,
   Video,
   Lock,
-  Shield,
   HelpCircle,
   MessageSquare,
   LogIn,
   MoreHorizontal,
   Camera,
   Archive,
-  Calendar
+  Calendar,
+  Bell,
+  ExternalLink
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { Html5QrcodeScanner } from 'html5-qrcode';
@@ -65,8 +66,8 @@ import {
   where,
   collection,
   onSnapshot,
-  orderBy,
-  arrayUnion
+  arrayUnion,
+  increment
 } from 'firebase/firestore';
 import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, UploadTask } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
@@ -77,9 +78,10 @@ import { GoogleDriveIcon, DropboxIcon } from './components/CloudIcons';
 import { ProductPage } from './components/ProductPage';
 import { PricingPage } from './components/PricingPage';
 import { SendarroLogo } from './components/SendarroLogo';
+import { CollectionsDashboard, DashboardClip } from './components/CollectionsDashboard';
 import { openGoogleDrivePicker } from './utils/googleDrive';
 import { connectGoogleDrive, getDriveAccessToken as getCachedDriveToken, clearDriveAccessToken } from './services/googleDrive';
-import { openDropboxChooser } from './utils/dropbox';
+import { openDropboxChooser, openDropboxSaver, loadDropboxScript, DEFAULT_DROPBOX_APP_KEY } from './utils/dropbox';
 import { getInitialLanguage, translations, LanguageCode, setAppLanguage } from './utils/i18n';
 import { LanguageSelector } from './components/LanguageSelector';
 
@@ -118,6 +120,17 @@ interface ClipData {
   fileSize?: number;
   downloadUrl?: string;
   hasFile?: boolean;
+  files?: any[];
+  isCollection?: boolean;
+  submissions?: any[];
+  submissionCount?: number;
+  maxSubmissions?: number;
+  submissionDeadline?: Timestamp;
+  burnOnRead?: boolean;
+  viewCount?: number;
+  totalSize?: number;
+  fileCount?: number;
+  hasWebhook?: boolean;
 }
 
 // --- Constants ---
@@ -244,205 +257,7 @@ const LandingPage = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () =>
   </div>
 );
 
-const Vault = ({ 
-  user, 
-  handleCopyCode, 
-  onReactivate, 
-  reactivatingClips 
-}: { 
-  user: User | null, 
-  handleCopyCode: (code: string) => void,
-  onReactivate: (clipId: string) => void,
-  reactivatingClips: Record<string, number>
-}) => {
-  const [allUserClips, setAllUserClips] = useState<ClipData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user) return;
-    
-    const q = query(
-      collection(db, 'clips'),
-      where('authorUid', '==', user.uid)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const clips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClipData));
-      setAllUserClips(clips);
-      setLoading(false);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'clips');
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  const vaultClips = useMemo(() => {
-    const now = getSyncedNow();
-    const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
-    return allUserClips.filter((c: ClipData) => {
-      const expireTime = c.expiresAt.toMillis();
-      const isExpired = expireTime < now;
-      const isWithinSevenDays = (now - expireTime < sevenDaysInMs);
-      const isReactivating = reactivatingClips[c.id] > 0;
-      
-      // Show if it's active OR if it's expired but within the 7-day recovery window
-      return !isExpired || isWithinSevenDays || isReactivating;
-    });
-  }, [allUserClips, reactivatingClips]);
-
-  const onCopy = (id: string) => {
-    handleCopyCode(id);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleDelete = async (e: React.MouseEvent, clipId: string) => {
-    e.stopPropagation();
-    try {
-      await deleteDoc(doc(db, 'clips', clipId));
-    } catch (err) {
-      console.error("Error deleting clip:", err);
-    }
-  };
-
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center py-12 space-y-4">
-      <RefreshCw className="w-8 h-8 animate-spin text-neutral-400" />
-      <p className="text-xs uppercase tracking-wider font-semibold text-neutral-600">Accessing Vault...</p>
-    </div>
-  );
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="space-y-6"
-    >
-      <div className="space-y-2 text-center">
-        <div className="flex items-center justify-center gap-2 text-blue-600">
-          <Lock className="w-4 h-4" />
-          <h2 className="text-xl sm:text-2xl font-serif italic text-[#141414]">Locked Vault</h2>
-        </div>
-        <p className="text-xs text-neutral-700 max-w-[260px] sm:max-w-sm mx-auto leading-relaxed">
-          Pro Max Insurance: Expired clips are held here for 7 days before permanent deletion.
-        </p>
-      </div>
-
-      {vaultClips.length === 0 ? (
-        <div className="border-2 border-dashed border-[#141414]/15 rounded-sm p-12 text-center space-y-4">
-          <Shield className="w-8 h-8 mx-auto text-neutral-400" />
-          <p className="text-xs uppercase tracking-wider font-semibold text-neutral-600">Your vault is empty</p>
-        </div>
-      ) : (
-        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-          {vaultClips.map((clip) => (
-            <div key={clip.id} className="border border-[#141414] p-4 rounded-sm bg-white hover:bg-blue-50 transition-colors group relative overflow-hidden">
-              <button 
-                onClick={(e) => handleDelete(e, clip.id)}
-                className="absolute top-2 right-2 p-1 bg-white hover:bg-red-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <X className="w-3.5 h-3.5 text-red-600" />
-              </button>
-              {reactivatingClips[clip.id] > 0 && (
-                <motion.div 
-                  initial={{ width: '100%' }}
-                  animate={{ width: '0%' }}
-                  transition={{ duration: reactivatingClips[clip.id], ease: 'linear' }}
-                  className="absolute bottom-0 left-0 h-1 bg-blue-500 opacity-30"
-                />
-              )}
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold font-mono bg-[#141414] text-white px-2 py-0.5 rounded-sm">{clip.id}</span>
-                  <span className={`text-[10px] uppercase tracking-wider font-bold ${
-                    reactivatingClips[clip.id] > 0 || clip.expiresAt.toMillis() > getSyncedNow()
-                      ? "text-emerald-700" 
-                      : "text-neutral-600"
-                  }`}>
-                    {reactivatingClips[clip.id] > 0 || clip.expiresAt.toMillis() > getSyncedNow()
-                      ? "Live / Active" 
-                      : `Expired ${Math.floor((getSyncedNow() - clip.expiresAt.toMillis()) / (1000 * 60 * 60))}h ago`
-                    }
-                  </span>
-                  {clip.burnOnRead && (
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded-sm border border-red-200 flex items-center gap-1">
-                      <Zap className="w-2.5 h-2.5" />
-                      Burn
-                    </span>
-                  )}
-                  {clip.viewCount !== undefined && (
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-neutral-600 flex items-center gap-1">
-                      <HelpCircle className="w-2.5 h-2.5" />
-                      {clip.viewCount} Views
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => onCopy(clip.id)}
-                    className={`p-1 rounded-sm transition-all ${copiedId === clip.id ? 'bg-emerald-500 text-white' : 'hover:bg-[#141414]/5 text-neutral-600 hover:text-neutral-900'}`}
-                    title="Copy Code"
-                  >
-                    {copiedId === clip.id ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                  {clip.content && (
-                    <button 
-                      onClick={() => {
-                        try {
-                          navigator.clipboard.writeText(clip.content || '');
-                          setCopiedId(clip.id + '-content');
-                          setTimeout(() => setCopiedId(null), 2000);
-                        } catch (err) {
-                          console.warn('Failed to copy content:', err);
-                        }
-                      }}
-                      className={`p-1 rounded-sm transition-all ${copiedId === clip.id + '-content' ? 'bg-emerald-500 text-white' : 'hover:bg-[#141414]/5 text-neutral-600 hover:text-neutral-900'}`}
-                      title="Copy Content"
-                    >
-                      {copiedId === clip.id + '-content' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
-                    </button>
-                  )}
-                  <AnimatePresence>
-                    {reactivatingClips[clip.id] > 0 ? (
-                      <motion.div 
-                        key="active-timer"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        className="text-[10px] font-bold uppercase tracking-wider text-blue-700 flex items-center gap-1 bg-blue-100 px-2 py-1 rounded-sm"
-                      >
-                        <Clock className="w-3.5 h-3.5 animate-pulse" />
-                        Active: {formatTime(reactivatingClips[clip.id])}
-                      </motion.div>
-                    ) : (
-                      <motion.button 
-                        key="reactivate-btn"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        onClick={() => onReactivate(clip.id)}
-                        className="text-[10px] font-bold uppercase tracking-wider text-blue-700 hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Zap className="w-3 h-3" />
-                        Reactivate
-                      </motion.button>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
-              <p className="text-xs text-neutral-700 line-clamp-2 font-mono leading-relaxed">{clip.content || (clip.hasFile ? `[File: ${clip.fileName}]` : 'No content')}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </motion.div>
-  );
-};
-
-// --- Components ---
+// --- App Entry ---
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -461,6 +276,8 @@ export default function App() {
     }
   };
   const [userClips, setUserClips] = useState<ClipData[]>([]);
+  const [userClipsLoading, setUserClipsLoading] = useState<boolean>(false);
+  const [trialCollectionsUsed, setTrialCollectionsUsed] = useState<number>(0);
   const [serverOffset, setServerOffset] = useState<number>(0);
 
   useEffect(() => {
@@ -484,18 +301,36 @@ export default function App() {
   const getSyncedNow = () => Date.now() + serverOffset;
   
   useEffect(() => {
-    if (!user) return;
-    
+    if (!user || user.isAnonymous) {
+      setUserClips([]);
+      setUserClipsLoading(false);
+      return;
+    }
+
+    setUserClipsLoading(true);
     const q = query(
       collection(db, 'clips'),
-      where('authorUid', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('authorUid', '==', user.uid)
     );
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const clips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClipData));
-      setUserClips(clips);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const clips = snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() } as ClipData))
+          .sort((a, b) => {
+            const aMs = typeof a.createdAt?.toMillis === 'function' ? a.createdAt.toMillis() : 0;
+            const bMs = typeof b.createdAt?.toMillis === 'function' ? b.createdAt.toMillis() : 0;
+            return bMs - aMs;
+          });
+        setUserClips(clips);
+        setUserClipsLoading(false);
+      },
+      (err) => {
+        console.warn('Workspace clips listener notice:', err);
+        setUserClipsLoading(false);
+      }
+    );
     
     return () => unsubscribe();
   }, [user]);
@@ -549,7 +384,14 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [burnOnRead, setBurnOnRead] = useState(false);
   const [collectionDeadline, setCollectionDeadline] = useState<string>('');
+  const [collectionWebhookUrl, setCollectionWebhookUrl] = useState<string>('');
+  const [testingWebhook, setTestingWebhook] = useState<boolean>(false);
   const [isZipping, setIsZipping] = useState(false);
+  const [exportingDriveClipId, setExportingDriveClipId] = useState<string | null>(null);
+  const [driveExportFolderUrls, setDriveExportFolderUrls] = useState<Record<string, string>>({});
+  const [showInboxWebhookEditor, setShowInboxWebhookEditor] = useState<boolean>(false);
+  const [inboxWebhookInput, setInboxWebhookInput] = useState<string>('');
+  const [savingInboxWebhook, setSavingInboxWebhook] = useState<boolean>(false);
   const [deadlineNowTick, setDeadlineNowTick] = useState<number>(() => Date.now());
   const [contributorName, setContributorName] = useState<string>('');
   const [contributorFiles, setContributorFiles] = useState<File[]>([]);
@@ -621,6 +463,8 @@ export default function App() {
   const uploadCancelledRef = useRef<boolean>(false);
   const pendingUploadCodeRef = useRef<string | null>(null);
   const receiverUnsubRef = useRef<(() => void) | null>(null);
+  const sendBoxRef = useRef<HTMLDivElement | null>(null);
+  const receiveBoxRef = useRef<HTMLDivElement | null>(null);
 
   const getMaxFileSizeBytes = () => {
     if (isProMax) return 2 * 1024 * 1024 * 1024;
@@ -773,7 +617,8 @@ export default function App() {
 
   const handleDownloadAllAsZip = async (
     entries: { url?: string; fileName: string; folder?: string }[],
-    zipFileName: string
+    zipFileName: string,
+    clipIdOverride?: string
   ) => {
     if (!entries || entries.length === 0 || isZipping) return;
     if (isApiBlocked) {
@@ -793,7 +638,7 @@ export default function App() {
       let completed = 0;
 
       for (const entry of entries) {
-        const resolvedUrl = await resolveDownloadUrl(entry.url, entry.fileName, retrievedClip?.id);
+        const resolvedUrl = await resolveDownloadUrl(entry.url, entry.fileName, clipIdOverride || retrievedClip?.id);
         if (!resolvedUrl) {
           throw new Error(`Missing download link for ${entry.fileName}`);
         }
@@ -1136,6 +981,7 @@ export default function App() {
         if (userData.tier) {
           setTier(userData.tier, user.uid);
         }
+        setTrialCollectionsUsed(Number(userData.trialCollectionsUsed || 0));
       }
     }, (err) => {
       console.warn("User doc listener notice:", err);
@@ -1168,6 +1014,7 @@ export default function App() {
   const effectiveTier = isRealUser ? tier : 'free';
   const isPro = isRealUser && (effectiveTier === 'pro' || effectiveTier === 'promax');
   const isProMax = isRealUser && effectiveTier === 'promax';
+  const hasUsedTrialCollection = !isProMax && (trialCollectionsUsed >= 1 || userClips.some((c) => Boolean(c.isCollection)));
 
   const handleCloudServiceClick = (service: 'drive' | 'dropbox') => {
     if (!isRealUser) {
@@ -1181,11 +1028,6 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (!isProMax && shareMode === 'collection') {
-      setShareMode('file');
-    }
-  }, [isProMax, shareMode]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const hasShownPaywall = useRef(false);
 
@@ -1214,7 +1056,9 @@ export default function App() {
             if (data.tier) {
               setTier(data.tier, u.uid);
             }
+            setTrialCollectionsUsed(Number(data.trialCollectionsUsed || 0));
           } else {
+            setTrialCollectionsUsed(0);
             await setDoc(userDocRef, {
               uid: u.uid,
               email: u.email,
@@ -1245,6 +1089,7 @@ export default function App() {
       } else {
         setIsGuest(true);
         setTierState('free');
+        setTrialCollectionsUsed(0);
         localStorage.removeItem('clipcloud_user_tier');
         setHasDismissedFree(false);
       }
@@ -1663,14 +1508,40 @@ export default function App() {
     }
 
     const isCollectionMode = shareMode === 'collection';
+    if (isCollectionMode) {
+      if (!isRealUser) {
+        setShowLoginModal(true);
+        setStatus({ type: 'error', message: 'Sign in with Google to create your 1 free trial Collection Box.' });
+        return;
+      }
+      if (!isProMax && hasUsedTrialCollection) {
+        setStatus({ type: 'error', message: 'You have already used your 1 free trial Collection Box. Upgrade to Pro Max for unlimited boxes.' });
+        return;
+      }
+    }
+
     let parsedDeadlineDate: Date | null = null;
-    if (isCollectionMode && collectionDeadline) {
+    if (isCollectionMode && isProMax && collectionDeadline) {
       const candidate = new Date(collectionDeadline);
       if (isNaN(candidate.getTime()) || candidate.getTime() <= getSyncedNow()) {
         setStatus({ type: 'error', message: 'Submission deadline must be a valid future date & time.' });
         return;
       }
       parsedDeadlineDate = candidate;
+    }
+
+    const cleanWebhookUrl = isCollectionMode && isProMax ? collectionWebhookUrl.trim() : '';
+    if (cleanWebhookUrl) {
+      try {
+        const parsedWebhook = new URL(cleanWebhookUrl);
+        if (parsedWebhook.protocol !== 'https:') {
+          setStatus({ type: 'error', message: 'Webhook URL must start with https://' });
+          return;
+        }
+      } catch {
+        setStatus({ type: 'error', message: 'Please enter a valid Slack, Discord, or Webhook URL.' });
+        return;
+      }
     }
 
     const maxChars = isPro ? 100000 : 10000;
@@ -1694,7 +1565,9 @@ export default function App() {
 
     const isFileTransfer = selectedFiles.length > 0 || shareMode === 'file';
     const defaultExpiration = isFileTransfer ? FILE_EXPIRATION_SECONDS : EXPIRATION_SECONDS;
-    const expirationSeconds = isPro ? expirationOption : defaultExpiration;
+    const expirationSeconds = isCollectionMode && !isProMax
+      ? Math.max(86400, isPro ? expirationOption : 0)
+      : (isPro ? expirationOption : defaultExpiration);
     
     // Check if custom code already exists
     if (isPro && customCodeInput.trim()) {
@@ -1953,7 +1826,7 @@ export default function App() {
         );
         const readyExpiresAt = new Date(effectiveExpiresMs);
         const clipData: any = {
-          content: savedText || (isCollectionMode ? 'Pro Max Collection Drop Box' : ''),
+          content: savedText || (isCollectionMode ? (isProMax ? 'Pro Max Collection Drop Box' : 'Trial Collection Drop Box') : ''),
           createdAt: serverTimestamp(),
           expiresAt: Timestamp.fromDate(readyExpiresAt),
           authorUid: auth.currentUser?.uid || null,
@@ -1961,7 +1834,9 @@ export default function App() {
           burnOnRead: burnOnRead,
           viewCount: 0,
           isCollection: isCollectionMode,
+          ...(isCollectionMode && !isProMax ? { maxSubmissions: 5 } : {}),
           ...(isCollectionMode && parsedDeadlineDate ? { submissionDeadline: Timestamp.fromDate(parsedDeadlineDate) } : {}),
+          hasWebhook: Boolean(cleanWebhookUrl),
           submissions: [],
           submissionCount: 0,
           uploadStatus: 'ready',
@@ -1976,6 +1851,22 @@ export default function App() {
         };
 
         await setDoc(doc(db, 'clips', newCode), clipData);
+        if (cleanWebhookUrl && auth.currentUser) {
+          await setDoc(doc(db, 'clips', newCode, 'private', 'settings'), {
+            webhookUrl: cleanWebhookUrl,
+            updatedAt: serverTimestamp()
+          });
+        }
+        if (isCollectionMode && !isProMax && auth.currentUser) {
+          setTrialCollectionsUsed((prev) => Math.max(prev + 1, 1));
+          setDoc(doc(db, 'users', auth.currentUser.uid), {
+            uid: auth.currentUser.uid,
+            email: auth.currentUser.email || '',
+            tier: effectiveTier,
+            trialCollectionsUsed: increment(1),
+            updatedAt: serverTimestamp()
+          }, { merge: true }).catch((e) => console.warn('Trial counter sync notice:', e));
+        }
 
         setTransferProgress(prev => prev ? {
           ...prev,
@@ -1992,6 +1883,7 @@ export default function App() {
         setManualText('');
         setCustomCodeInput('');
         setCollectionDeadline('');
+        setCollectionWebhookUrl('');
         pendingUploadCodeRef.current = null;
         setStatus({ type: 'success', message: 'Upload complete! Your code is ready.' });
       } else {
@@ -2002,7 +1894,7 @@ export default function App() {
         );
         const expiresAt = new Date(effectiveExpiresMs);
         const clipData: any = {
-          content: savedText || (isCollectionMode ? 'Pro Max Collection Drop Box' : ''),
+          content: savedText || (isCollectionMode ? (isProMax ? 'Pro Max Collection Drop Box' : 'Trial Collection Drop Box') : ''),
           createdAt: serverTimestamp(),
           expiresAt: Timestamp.fromDate(expiresAt),
           authorUid: auth.currentUser?.uid || null,
@@ -2010,13 +1902,31 @@ export default function App() {
           burnOnRead: burnOnRead,
           viewCount: 0,
           isCollection: isCollectionMode,
+          ...(isCollectionMode && !isProMax ? { maxSubmissions: 5 } : {}),
           ...(isCollectionMode && parsedDeadlineDate ? { submissionDeadline: Timestamp.fromDate(parsedDeadlineDate) } : {}),
+          hasWebhook: Boolean(cleanWebhookUrl),
           submissions: [],
           submissionCount: 0,
           uploadStatus: 'ready'
         };
 
         await setDoc(doc(db, 'clips', newCode), clipData);
+        if (cleanWebhookUrl && auth.currentUser) {
+          await setDoc(doc(db, 'clips', newCode, 'private', 'settings'), {
+            webhookUrl: cleanWebhookUrl,
+            updatedAt: serverTimestamp()
+          });
+        }
+        if (isCollectionMode && !isProMax && auth.currentUser) {
+          setTrialCollectionsUsed((prev) => Math.max(prev + 1, 1));
+          setDoc(doc(db, 'users', auth.currentUser.uid), {
+            uid: auth.currentUser.uid,
+            email: auth.currentUser.email || '',
+            tier: effectiveTier,
+            trialCollectionsUsed: increment(1),
+            updatedAt: serverTimestamp()
+          }, { merge: true }).catch((e) => console.warn('Trial counter sync notice:', e));
+        }
 
         setCode(newCode);
         if (isPro && customCodeInput.trim()) addRecentCode(newCode);
@@ -2025,6 +1935,7 @@ export default function App() {
         setManualText('');
         setCustomCodeInput('');
         setCollectionDeadline('');
+        setCollectionWebhookUrl('');
         setStatus({ type: 'idle', message: '' });
       }
     } catch (err: any) {
@@ -2242,6 +2153,12 @@ export default function App() {
       return;
     }
 
+    const submissionLimit = retrievedClip?.maxSubmissions || (retrievedClip?.tier !== 'promax' ? 5 : null);
+    if (submissionLimit && (retrievedClip?.submissions?.length || 0) >= submissionLimit) {
+      setStatus({ type: 'error', message: `Collection limit reached (${submissionLimit}/${submissionLimit} submissions). Ask the owner to upgrade to Pro Max.` });
+      return;
+    }
+
     if (!contributorName.trim()) {
       setStatus({ type: 'error', message: 'Please enter your name or student ID.' });
       return;
@@ -2258,8 +2175,14 @@ export default function App() {
     }
 
     const totalBytes = contributorFiles.reduce((sum, f) => sum + f.size, 0);
-    const maxCollectionSize = retrievedClip?.tier === 'promax' ? 2 * 1024 * 1024 * 1024 : 500 * 1024 * 1024;
-    const maxCollectionLabel = retrievedClip?.tier === 'promax' ? '2 GB' : '500 MB';
+    const maxCollectionSize =
+      retrievedClip?.tier === 'promax'
+        ? 2 * 1024 * 1024 * 1024
+        : retrievedClip?.tier === 'pro'
+        ? 500 * 1024 * 1024
+        : 10 * 1024 * 1024;
+    const maxCollectionLabel =
+      retrievedClip?.tier === 'promax' ? '2 GB' : retrievedClip?.tier === 'pro' ? '500 MB' : '10 MB';
     if (totalBytes > maxCollectionSize) {
       setStatus({ type: 'error', message: `Submission too large (${formatBytes(totalBytes)} total). Max ${maxCollectionLabel} allowed.` });
       return;
@@ -2463,6 +2386,21 @@ export default function App() {
         submissionCount: (retrievedClip?.submissionCount || 0) + 1
       });
 
+      if (retrievedClip?.hasWebhook) {
+        fetch('/api/notify-collection-webhook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: targetCode,
+            contributorName: newSubmission.contributorName,
+            fileCount: uploadedFiles.length,
+            totalBytes,
+            files: uploadedFiles.map((f: any) => ({ fileName: f.fileName, fileSize: f.fileSize })),
+            submittedAt: newSubmission.submittedAt
+          })
+        }).catch((err) => console.warn('Webhook alert dispatch notice:', err));
+      }
+
       setTransferProgress(prev => prev ? {
         ...prev,
         bytesTransferred: totalBytes,
@@ -2509,11 +2447,362 @@ export default function App() {
     }
   };
 
+  const openCollectionInbox = (clip: DashboardClip) => {
+    if (receiverUnsubRef.current) {
+      receiverUnsubRef.current();
+      receiverUnsubRef.current = null;
+    }
+    setRetrievedClip(clip);
+    setStatus({ type: 'idle', message: '' });
+    setActiveTab('get');
+
+    const docRef = doc(db, 'clips', clip.id);
+    receiverUnsubRef.current = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        setRetrievedClip({ id: snap.id, ...snap.data() });
+      }
+    });
+
+    requestAnimationFrame(() => {
+      receiveBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
+
+  const handleStartNewCollection = () => {
+    if (!isRealUser) {
+      setShowLoginModal(true);
+      return;
+    }
+    if (!isProMax && hasUsedTrialCollection) {
+      setCurrentView('pricing');
+      return;
+    }
+    setCurrentView('app');
+    setCode(null);
+    setShareMode('collection');
+    setIsSendExpanded(true);
+    setActiveTab('share');
+    requestAnimationFrame(() => {
+      sendBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
+
+  const handleDeleteOwnedClip = async (clipId: string) => {
+    try {
+      await deleteDoc(doc(db, 'clips', clipId));
+      if (retrievedClip?.id === clipId) {
+        if (receiverUnsubRef.current) {
+          receiverUnsubRef.current();
+          receiverUnsubRef.current = null;
+        }
+        setRetrievedClip(null);
+      }
+      setStatus({ type: 'success', message: `Deleted ${clipId} from workspace.` });
+    } catch (err) {
+      console.error('Error deleting clip:', err);
+      setStatus({ type: 'error', message: 'Could not delete item. Please try again.' });
+    }
+  };
+
+  const handleDownloadCollectionZip = (clip: DashboardClip) => {
+    const submissions = Array.isArray(clip.submissions) ? clip.submissions : [];
+    const entries = submissions.flatMap((sub, sIdx) =>
+      (sub.files || []).map((file) => ({
+        url: file.downloadUrl || file.url,
+        fileName: file.fileName || 'file',
+        folder: sub.contributorName || `Submission_${sIdx + 1}`,
+      }))
+    );
+    if (entries.length > 0) {
+      handleDownloadAllAsZip(entries, `collection-${clip.id}.zip`, clip.id);
+    }
+  };
+
+  const collectionCountBadge = useMemo(
+    () => userClips.filter((c) => Boolean(c.isCollection)).length,
+    [userClips]
+  );
+
+  // Preload Dropbox Drop-in script cleanly when user owns or opens Collection Boxes
+  useEffect(() => {
+    if (!isProMax && collectionCountBadge === 0 && !retrievedClip?.isCollection) return;
+    const key =
+      localStorage.getItem('sendarro_dropbox_key') ||
+      (import.meta.env.VITE_DROPBOX_APP_KEY as string) ||
+      DEFAULT_DROPBOX_APP_KEY;
+    loadDropboxScript(key).catch(() => {});
+  }, [isProMax, collectionCountBadge, retrievedClip?.isCollection]);
+
+  // Load owner's private webhook setting whenever opening an owned Collection Inbox
+  useEffect(() => {
+    setShowInboxWebhookEditor(false);
+    if (!retrievedClip?.id || !retrievedClip?.isCollection || !user || retrievedClip.authorUid !== user.uid) {
+      setInboxWebhookInput('');
+      return;
+    }
+
+    let cancelled = false;
+    getDoc(doc(db, 'clips', retrievedClip.id, 'private', 'settings'))
+      .then((snap) => {
+        if (!cancelled) {
+          setInboxWebhookInput(snap.exists() ? (snap.data()?.webhookUrl || '') : '');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setInboxWebhookInput('');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [retrievedClip?.id, retrievedClip?.isCollection, retrievedClip?.authorUid, user]);
+
+  const handleTestWebhook = async (rawWebhookUrl: string, title?: string, clipCode?: string) => {
+    const trimmed = rawWebhookUrl.trim();
+    if (!trimmed) {
+      setStatus({ type: 'error', message: 'Enter a Slack, Discord, or Webhook URL first.' });
+      return;
+    }
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
+
+    setTestingWebhook(true);
+    setStatus({ type: 'loading', message: 'Sending test notification...' });
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/test-webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          webhookUrl: trimmed,
+          collectionTitle: title || manualText.trim() || 'My Collection Box',
+          code: clipCode || customCodeInput.trim().toUpperCase() || undefined
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Webhook test failed.');
+      }
+      setStatus({ type: 'success', message: 'Test alert delivered! Check your Slack/Discord channel.' });
+    } catch (err: any) {
+      setStatus({ type: 'error', message: err?.message || 'Could not deliver test webhook.' });
+    } finally {
+      setTestingWebhook(false);
+    }
+  };
+
+  const handleSaveInboxWebhook = async () => {
+    if (!retrievedClip?.id || !user || retrievedClip.authorUid !== user.uid) return;
+    const trimmed = inboxWebhookInput.trim();
+    if (trimmed) {
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol !== 'https:') {
+          setStatus({ type: 'error', message: 'Webhook URL must start with https://' });
+          return;
+        }
+      } catch {
+        setStatus({ type: 'error', message: 'Please enter a valid https:// webhook URL.' });
+        return;
+      }
+    }
+
+    setSavingInboxWebhook(true);
+    try {
+      await setDoc(doc(db, 'clips', retrievedClip.id, 'private', 'settings'), {
+        webhookUrl: trimmed || null,
+        updatedAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, 'clips', retrievedClip.id), {
+        hasWebhook: Boolean(trimmed)
+      });
+      setRetrievedClip((prev: any) => (prev ? { ...prev, hasWebhook: Boolean(trimmed) } : prev));
+      setShowInboxWebhookEditor(false);
+      setStatus({
+        type: 'success',
+        message: trimmed ? 'Webhook alerts enabled for this collection!' : 'Webhook alerts removed.'
+      });
+    } catch (err: any) {
+      setStatus({ type: 'error', message: err?.message || 'Failed to update webhook settings.' });
+    } finally {
+      setSavingInboxWebhook(false);
+    }
+  };
+
+  const handleExportCollectionToDrive = async (clip: DashboardClip) => {
+    if (!isRealUser) {
+      setShowLoginModal(true);
+      return;
+    }
+
+    const submissions = Array.isArray(clip.submissions) ? clip.submissions : [];
+    const entries = submissions.flatMap((sub, sIdx) =>
+      (sub.files || []).map((file) => ({
+        downloadUrl: file.downloadUrl || file.url || '',
+        fileName: file.fileName || 'file',
+        contributorFolder: sub.contributorName || `Submission_${sIdx + 1}`,
+        mimeType: file.fileType || 'application/octet-stream'
+      }))
+    );
+
+    if (entries.length === 0) {
+      setStatus({ type: 'error', message: 'No submission files to export yet.' });
+      return;
+    }
+
+    setExportingDriveClipId(clip.id);
+    try {
+      let token = driveToken || getCachedDriveToken();
+      if (!token) {
+        setStatus({ type: 'loading', message: 'Connect Google Drive to export inbox...' });
+        token = await connectGoogleDrive(false);
+        setDriveToken(token);
+        localStorage.setItem('sendarro_drive_connected', 'true');
+      }
+
+      setStatus({
+        type: 'loading',
+        message: `Saving ${entries.length} ${entries.length === 1 ? 'file' : 'files'} to Google Drive...`
+      });
+
+      const res = await fetch('/api/import-to-drive', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          code: clip.id,
+          folderName: clip.content || `Collection ${clip.id}`,
+          entries
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        clearDriveAccessToken();
+        setDriveToken(null);
+        throw new Error('Google Drive session expired. Click Drive again to reconnect.');
+      }
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to save files to Google Drive.');
+      }
+
+      if (data.folderUrl) {
+        setDriveExportFolderUrls((prev) => ({ ...prev, [clip.id]: data.folderUrl }));
+      }
+
+      setStatus({
+        type: 'success',
+        message:
+          data.failedCount > 0
+            ? `Saved ${data.uploadedCount} files to Google Drive (${data.failedCount} skipped).`
+            : `Saved all ${data.uploadedCount} files to Google Drive!`
+      });
+    } catch (err: any) {
+      if (err?.code === 'auth/popup-closed-by-user') {
+        setStatus({ type: 'idle', message: '' });
+      } else {
+        setStatus({ type: 'error', message: err?.message || 'Google Drive export failed.' });
+      }
+    } finally {
+      setExportingDriveClipId(null);
+    }
+  };
+
+  const handleExportCollectionToDropbox = async (clip: DashboardClip) => {
+    const submissions = Array.isArray(clip.submissions) ? clip.submissions : [];
+    const rawEntries = submissions.flatMap((sub, sIdx) =>
+      (sub.files || []).map((file) => {
+        const contributor = (sub.contributorName || `Submission_${sIdx + 1}`)
+          .replace(/[\\/:*?"<>|]/g, '_')
+          .trim();
+        const fileName = (file.fileName || 'file').replace(/[\\/:*?"<>|]/g, '_');
+        const rawUrl = file.downloadUrl || file.url || '';
+        const absUrl = rawUrl.startsWith('/') ? `${window.location.origin}${rawUrl}` : rawUrl;
+        return {
+          rawUrl: absUrl,
+          filename: `${contributor} - ${fileName}`
+        };
+      })
+    );
+
+    if (rawEntries.length === 0) {
+      setStatus({ type: 'error', message: 'No submission files to save to Dropbox.' });
+      return;
+    }
+
+    const needsSigning = rawEntries.some(
+      (item) => item.rawUrl.includes('cloudflarestorage.com') && !item.rawUrl.includes('X-Amz-Signature')
+    );
+
+    let filesForDropbox: Array<{ url: string; filename: string }>;
+    if (needsSigning) {
+      setStatus({ type: 'loading', message: 'Preparing Dropbox export links...' });
+      filesForDropbox = await Promise.all(
+        rawEntries.map(async (item) => {
+          const signed = await resolveDownloadUrl(item.rawUrl, item.filename, clip.id);
+          return { url: signed || item.rawUrl, filename: item.filename };
+        })
+      );
+      setStatus({ type: 'idle', message: '' });
+    } else {
+      filesForDropbox = rawEntries.map((item) => ({ url: item.rawUrl, filename: item.filename }));
+    }
+
+    const appKey =
+      localStorage.getItem('sendarro_dropbox_key') ||
+      (import.meta.env.VITE_DROPBOX_APP_KEY as string) ||
+      DEFAULT_DROPBOX_APP_KEY;
+
+    openDropboxSaver(appKey, filesForDropbox, {
+      onSuccess: () => {
+        setStatus({
+          type: 'success',
+          message: `Saved ${filesForDropbox.length} ${filesForDropbox.length === 1 ? 'file' : 'files'} to Dropbox!`
+        });
+      },
+      onProgress: (progress) => {
+        const pct = Math.round((progress || 0) * 100);
+        setStatus({ type: 'loading', message: `Saving to Dropbox (${pct}%)...` });
+      },
+      onCancel: () => {
+        setStatus({ type: 'idle', message: '' });
+      },
+      onError: (errMsg) => {
+        setStatus({ type: 'error', message: errMsg });
+      }
+    });
+  };
+
   const collectionDeadlineMillis = getDeadlineMillis(retrievedClip?.submissionDeadline);
   const isCollectionClosed = Boolean(
     retrievedClip?.isCollection &&
     collectionDeadlineMillis &&
     (deadlineNowTick + serverOffset) > collectionDeadlineMillis
+  );
+  const collectionSubmissionLimit = retrievedClip?.isCollection
+    ? (retrievedClip?.maxSubmissions || (retrievedClip?.tier !== 'promax' ? 5 : null))
+    : null;
+  const collectionCurrentCount = retrievedClip?.submissions?.length || 0;
+  const isCollectionFull = Boolean(
+    retrievedClip?.isCollection &&
+    collectionSubmissionLimit &&
+    collectionCurrentCount >= collectionSubmissionLimit
+  );
+  const isRetrievedOwnerExpired = Boolean(
+    retrievedClip &&
+    user &&
+    retrievedClip.authorUid === user.uid &&
+    retrievedClip.expiresAt &&
+    typeof retrievedClip.expiresAt.toMillis === 'function' &&
+    retrievedClip.expiresAt.toMillis() < getSyncedNow() &&
+    !(reactivatingClips[retrievedClip.id] > 0)
   );
 
   return (
@@ -2752,7 +3041,7 @@ export default function App() {
           currentLang={currentLang}
         />
       ) : (
-        <main className="w-full max-w-md mx-auto sm:ml-8 lg:ml-16 sm:mr-auto p-4 sm:p-4 lg:px-6 pt-6 sm:pt-16">
+        <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 pb-10">
         {/* API Blocked Warning */}
         <AnimatePresence>
           {isApiBlocked && (
@@ -2776,36 +3065,46 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* Mobile / Tablet 3-Tab Toggle Bar (SHARE / GET / COLLECTIONS) */}
+        <div className="flex lg:hidden border border-[#141414] bg-[#E4E3E0] rounded-sm overflow-hidden mb-5">
+          <button 
+            onClick={() => setActiveTab('share')}
+            className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer ${
+              activeTab === 'share' 
+                ? 'bg-[#141414] text-[#E4E3E0]' 
+                : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
+            }`}
+          >
+            SHARE
+          </button>
+          <button 
+            onClick={() => setActiveTab('get')}
+            className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer border-l border-[#141414] ${
+              activeTab === 'get' 
+                ? 'bg-[#141414] text-[#E4E3E0]' 
+                : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
+            }`}
+          >
+            GET
+          </button>
+          <button 
+            onClick={() => setActiveTab('vault')}
+            className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer border-l border-[#141414] tabular-nums ${
+              activeTab === 'vault' 
+                ? 'bg-[#141414] text-[#E4E3E0]' 
+                : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
+            }`}
+          >
+            COLLECTIONS{collectionCountBadge > 0 ? ` (${collectionCountBadge})` : ''}
+          </button>
+        </div>
 
-
-        {/* Main Workspace */}
-        <div className="w-full max-w-full space-y-5">
-          {/* Mobile Only Tab Toggle Bar (SHARE / GET) - Exact match to screenshot */}
-          <div className="flex sm:hidden border border-[#141414] bg-[#E4E3E0] rounded-sm overflow-hidden mb-5">
-            <button 
-              onClick={() => setActiveTab('share')}
-              className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer ${
-                activeTab === 'share' 
-                  ? 'bg-[#141414] text-[#E4E3E0]' 
-                  : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
-              }`}
-            >
-              SHARE
-            </button>
-            <button 
-              onClick={() => setActiveTab('get')}
-              className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer border-l border-[#141414] ${
-                activeTab === 'get' 
-                  ? 'bg-[#141414] text-[#E4E3E0]' 
-                  : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
-              }`}
-            >
-              GET
-            </button>
-          </div>
-
+        {/* Main SaaS 2-Column Workspace */}
+        <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+          {/* Left Column: Send & Retrieve */}
+          <div className="lg:col-span-5 space-y-5">
           {/* SEND BOX */}
-          <div className={`SendBox bg-white border border-[#141414] p-5 sm:p-6 rounded-none sm:rounded-md shadow-none sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] relative overflow-hidden ${activeTab === 'share' ? 'block' : 'hidden sm:block'}`}>
+          <div ref={sendBoxRef} className={`SendBox bg-white border border-[#141414] p-5 sm:p-6 rounded-none sm:rounded-md shadow-none sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] relative overflow-hidden ${activeTab === 'share' ? 'block' : 'hidden lg:block'}`}>
             {!code && transferProgress?.status === 'uploading' ? (
               <div className="py-10 px-2 sm:px-4 space-y-6 text-center">
                 <div className="w-12 h-12 mx-auto rounded-full border-4 border-[#141414]/15 border-t-emerald-500 animate-spin" />
@@ -2898,6 +3197,18 @@ export default function App() {
                             Click to attach files, text, or drop here
                           </p>
                         </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShareMode('collection');
+                            setIsSendExpanded(true);
+                          }}
+                          className="pointer-events-auto inline-flex items-center gap-1.5 mt-1 text-[11px] font-mono font-bold uppercase tracking-wider text-blue-700 hover:text-blue-900 underline cursor-pointer"
+                        >
+                          <Zap className="w-3 h-3 fill-blue-600" />
+                          <span>{isProMax ? 'Create Collection Drop Box' : 'Try 1 Free Collection Box'}</span>
+                        </button>
                       </div>
                     </div>
                   )}
@@ -2913,11 +3224,12 @@ export default function App() {
                     </p>
                   </div>
 
-                  {/* Mode Tabs: TEXT CLIP / FILE CLIP / COLLECTION (for Pro Max) */}
+                  {/* Mode Tabs: TEXT CLIP / FILE CLIP / COLLECTION */}
                   <div className="flex border-b border-[#141414]/20 pt-1">
                     <button 
+                      type="button"
                       onClick={() => setShareMode('text')}
-                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                         shareMode === 'text' 
                           ? 'border-b-2 border-[#141414] text-[#141414]' 
                           : 'text-neutral-400 hover:text-neutral-700'
@@ -2926,8 +3238,9 @@ export default function App() {
                       TEXT CLIP
                     </button>
                     <button 
+                      type="button"
                       onClick={() => setShareMode('file')}
-                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                         shareMode === 'file' 
                           ? 'border-b-2 border-[#141414] text-[#141414]' 
                           : 'text-neutral-400 hover:text-neutral-700'
@@ -2935,19 +3248,18 @@ export default function App() {
                     >
                       FILE CLIP {selectedFiles.length > 0 && `(${selectedFiles.length})`}
                     </button>
-                    {isProMax && (
-                      <button 
-                        onClick={() => setShareMode('collection')}
-                        className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                          shareMode === 'collection' 
-                            ? 'border-b-2 border-blue-600 text-blue-700' 
-                            : 'text-blue-500 hover:text-blue-800'
-                        }`}
-                      >
-                        <Zap className="w-3.5 h-3.5 fill-blue-600" />
-                        COLLECTION
-                      </button>
-                    )}
+                    <button 
+                      type="button"
+                      onClick={() => setShareMode('collection')}
+                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
+                        shareMode === 'collection' 
+                          ? 'border-b-2 border-blue-600 text-blue-700' 
+                          : 'text-blue-600/80 hover:text-blue-800'
+                      }`}
+                    >
+                      <Zap className="w-3.5 h-3.5 fill-blue-600 shrink-0" />
+                      <span>COLLECTION</span>
+                    </button>
                   </div>
 
                   {/* Content Inputs */}
@@ -3064,53 +3376,190 @@ export default function App() {
                       </div>
                     )}
 
-                    {shareMode === 'collection' && isProMax && (
-                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-sm space-y-3">
-                        <div className="flex items-center gap-2 text-blue-800 font-bold text-xs uppercase tracking-wider font-mono">
-                          <Zap className="w-4 h-4 fill-blue-600 text-blue-600" />
-                          <span>Pro Max Collection Box</span>
+                    {shareMode === 'collection' && (
+                      !isRealUser ? (
+                        <div className="p-5 bg-[#F9F9F8] border-2 border-[#141414] rounded-sm space-y-4 text-center shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
+                          <div className="flex items-center justify-center gap-2 text-blue-700 font-bold text-xs uppercase tracking-wider font-mono">
+                            <Zap className="w-4 h-4 fill-blue-600 text-blue-600" />
+                            <span>Collection Drop Box · 1 Free Trial</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            <h3 className="text-base font-serif italic text-[#141414]">
+                              Collect files from anyone with one link
+                            </h3>
+                            <p className="text-xs text-neutral-600 leading-relaxed">
+                              Contributors never need an account. Sign in with Google to claim your 1 Free Trial Collection Box (up to 5 submissions, open for 24 hours).
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowLoginModal(true)}
+                            className="w-full bg-[#141414] text-[#E4E3E0] py-3 px-4 rounded-sm font-mono font-bold uppercase tracking-wider text-xs hover:bg-neutral-800 transition-colors flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+                          >
+                            <LogIn className="w-4 h-4 text-emerald-400" />
+                            <span>Sign in with Google for 1 Free Trial</span>
+                          </button>
                         </div>
-                        <input
-                          type="text"
-                          placeholder="Collection Title or Instructions"
-                          value={manualText}
-                          onChange={(e) => setManualText(e.target.value)}
-                          className="w-full p-3 border border-[#141414] rounded-sm font-mono text-xs bg-white"
-                        />
-                        <div className="space-y-1.5 pt-1">
+                      ) : !isProMax && hasUsedTrialCollection ? (
+                        <div className="p-5 bg-[#F9F9F8] border-2 border-[#141414] rounded-sm space-y-4 text-left shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
                           <div className="flex items-center justify-between gap-2">
-                            <label
-                              htmlFor="collection-deadline-input"
-                              className="text-[10px] uppercase tracking-wider font-bold text-neutral-700 font-mono flex items-center gap-1.5"
+                            <span className="inline-flex items-center gap-1.5 text-blue-700 font-bold text-xs uppercase tracking-wider font-mono">
+                              <Zap className="w-4 h-4 fill-blue-600 text-blue-600" />
+                              <span>Trial Limit Reached</span>
+                            </span>
+                            <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-300">
+                              1 / 1 Used
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <h3 className="text-base font-serif italic text-[#141414]">
+                              Upgrade to Pro Max for unlimited Collection Boxes
+                            </h3>
+                            <p className="text-xs text-neutral-600 leading-relaxed">
+                              Unlock unlimited drop boxes & submissions, 2 GB uploads, auto-closing deadlines, Slack/Discord alerts, and 1-click ZIP / Google Drive / Dropbox export.
+                            </p>
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setCurrentView('pricing')}
+                              className="flex-1 bg-blue-700 text-white py-3 px-4 rounded-sm font-mono font-bold uppercase tracking-wider text-xs hover:bg-blue-800 transition-colors flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
                             >
-                              <Calendar className="w-3.5 h-3.5 text-blue-700" />
-                              <span>Submission Deadline (Optional)</span>
-                            </label>
-                            {collectionDeadline && (
-                              <button
-                                type="button"
-                                onClick={() => setCollectionDeadline('')}
-                                className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 hover:text-[#141414] underline cursor-pointer"
-                              >
-                                Clear
-                              </button>
+                              <Zap className="w-3.5 h-3.5 fill-white" />
+                              <span>Upgrade to Pro Max</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActiveTab('vault')}
+                              className="border border-[#141414] bg-white text-[#141414] py-3 px-4 rounded-sm font-mono font-bold uppercase tracking-wider text-xs hover:bg-neutral-100 transition-colors whitespace-nowrap cursor-pointer"
+                            >
+                              My Collections
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-sm space-y-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 text-blue-800 font-bold text-xs uppercase tracking-wider font-mono">
+                              <Zap className="w-4 h-4 fill-blue-600 text-blue-600" />
+                              <span>{isProMax ? 'Pro Max Collection Box' : 'Free Trial Collection Box'}</span>
+                            </div>
+                            {!isProMax && (
+                              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-800 bg-white border border-blue-300 px-2 py-0.5 tabular-nums">
+                                1 Free · Max 5 Submissions
+                              </span>
                             )}
                           </div>
                           <input
-                            id="collection-deadline-input"
-                            type="datetime-local"
-                            min={toLocalDateTimeInputValue(new Date())}
-                            value={collectionDeadline}
-                            onChange={(e) => setCollectionDeadline(e.target.value)}
-                            className="w-full p-2.5 border border-[#141414] rounded-sm font-mono text-xs bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-[#141414]"
+                            type="text"
+                            placeholder="Collection Title or Instructions"
+                            value={manualText}
+                            onChange={(e) => setManualText(e.target.value)}
+                            className="w-full p-3 border border-[#141414] rounded-sm font-mono text-xs bg-white"
                           />
-                          <p className="text-[10px] font-mono text-neutral-600">
-                            {collectionDeadline
-                              ? `Auto-closes submissions on ${new Date(collectionDeadline).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`
-                              : 'Leave blank to keep open until clip expiration.'}
-                          </p>
+                          {isProMax ? (
+                            <>
+                              <div className="space-y-1.5 pt-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <label
+                                    htmlFor="collection-deadline-input"
+                                    className="text-[10px] uppercase tracking-wider font-bold text-neutral-700 font-mono flex items-center gap-1.5"
+                                  >
+                                    <Calendar className="w-3.5 h-3.5 text-blue-700" />
+                                    <span>Submission Deadline (Optional)</span>
+                                  </label>
+                                  {collectionDeadline && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setCollectionDeadline('')}
+                                      className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 hover:text-[#141414] underline cursor-pointer"
+                                    >
+                                      Clear
+                                    </button>
+                                  )}
+                                </div>
+                                <input
+                                  id="collection-deadline-input"
+                                  type="datetime-local"
+                                  min={toLocalDateTimeInputValue(new Date())}
+                                  value={collectionDeadline}
+                                  onChange={(e) => setCollectionDeadline(e.target.value)}
+                                  className="w-full p-2.5 border border-[#141414] rounded-sm font-mono text-xs bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-[#141414]"
+                                />
+                                <p className="text-[10px] font-mono text-neutral-600">
+                                  {collectionDeadline
+                                    ? `Auto-closes submissions on ${new Date(collectionDeadline).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`
+                                    : 'Leave blank to keep open until clip expiration.'}
+                                </p>
+                              </div>
+
+                              <div className="space-y-1.5 pt-2 border-t border-blue-200/80">
+                                <div className="flex items-center justify-between gap-2">
+                                  <label
+                                    htmlFor="collection-webhook-input"
+                                    className="text-[10px] uppercase tracking-wider font-bold text-neutral-700 font-mono flex items-center gap-1.5"
+                                  >
+                                    <Bell className="w-3.5 h-3.5 text-blue-700" />
+                                    <span>Alert Webhook URL (Optional)</span>
+                                  </label>
+                                  {collectionWebhookUrl.trim() && (
+                                    <button
+                                      type="button"
+                                      disabled={testingWebhook}
+                                      onClick={() => handleTestWebhook(collectionWebhookUrl)}
+                                      className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-700 hover:text-blue-900 underline cursor-pointer disabled:opacity-50"
+                                    >
+                                      {testingWebhook ? 'Testing...' : 'Send Test'}
+                                    </button>
+                                  )}
+                                </div>
+                                <input
+                                  id="collection-webhook-input"
+                                  type="url"
+                                  placeholder="https://discord.com/api/webhooks/... or hooks.slack.com/..."
+                                  value={collectionWebhookUrl}
+                                  onChange={(e) => setCollectionWebhookUrl(e.target.value)}
+                                  className="w-full p-2.5 border border-[#141414] rounded-sm font-mono text-xs bg-white placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-[#141414]"
+                                />
+                                <p className="text-[10px] font-mono text-neutral-600">
+                                  Instant alert in Slack, Discord, Teams, or Zapier/Make on every new upload.
+                                </p>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="space-y-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setCurrentView('pricing')}
+                                className="w-full p-2.5 bg-white/80 hover:bg-white border border-blue-200 rounded-sm flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
+                              >
+                                <span className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600">
+                                  <Calendar className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                                  <span>Auto-Closing Deadlines</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase tracking-wider text-blue-700 shrink-0">
+                                  <Lock className="w-3 h-3" />
+                                  <span>Pro Max</span>
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCurrentView('pricing')}
+                                className="w-full p-2.5 bg-white/80 hover:bg-white border border-blue-200 rounded-sm flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
+                              >
+                                <span className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600">
+                                  <Bell className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                                  <span>Slack / Discord / Webhook Alerts</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase tracking-wider text-blue-700 shrink-0">
+                                  <Lock className="w-3 h-3" />
+                                  <span>Pro Max</span>
+                                </span>
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      )
                     )}
 
                     {isPro && (
@@ -3166,34 +3615,40 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Expiration text matching screenshot */}
-                  <div className="flex items-center justify-center gap-1.5 text-xs font-mono text-neutral-500 pt-1">
-                    <Clock className="w-3.5 h-3.5 text-neutral-500" />
-                    <span>
-                      {shareMode === 'collection' && collectionDeadline
-                        ? `Closes ${new Date(collectionDeadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}`
-                        : `Code expires in ${formatTime(isPro ? expirationOption : (selectedFiles.length > 0 || shareMode === 'file' ? FILE_EXPIRATION_SECONDS : EXPIRATION_SECONDS))}`}
-                    </span>
-                  </div>
+                  {!(shareMode === 'collection' && (!isRealUser || (!isProMax && hasUsedTrialCollection))) && (
+                    <>
+                      {/* Expiration text matching screenshot */}
+                      <div className="flex items-center justify-center gap-1.5 text-xs font-mono text-neutral-500 pt-1">
+                        <Clock className="w-3.5 h-3.5 text-neutral-500" />
+                        <span>
+                          {shareMode === 'collection' && isProMax && collectionDeadline
+                            ? `Closes ${new Date(collectionDeadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}`
+                            : shareMode === 'collection' && !isProMax
+                            ? 'Trial stays open 24h · Up to 5 submissions'
+                            : `Code expires in ${formatTime(isPro ? expirationOption : (selectedFiles.length > 0 || shareMode === 'file' ? FILE_EXPIRATION_SECONDS : EXPIRATION_SECONDS))}`}
+                        </span>
+                      </div>
 
-                  {/* Generate Code button matching screenshot */}
-                  <button 
-                    onClick={handleShare}
-                    disabled={status.type === 'loading' || (!manualText.trim() && selectedFiles.length === 0)}
-                    className="w-full bg-[#737373] hover:bg-[#525252] text-white py-4 rounded-sm font-mono font-bold uppercase tracking-[0.15em] text-sm transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 cursor-pointer"
-                  >
-                    {status.type === 'loading' && !status.message.includes('Retrieving') ? (
-                      <>
-                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
-                        <span>{transferProgress?.status === 'uploading' ? `UPLOADING (${transferProgress.percent}%)` : 'GENERATING...'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Share2 className="w-4 h-4" />
-                        <span>GENERATE CODE</span>
-                      </>
-                    )}
-                  </button>
+                      {/* Generate Code button matching screenshot */}
+                      <button 
+                        onClick={handleShare}
+                        disabled={status.type === 'loading' || (!manualText.trim() && selectedFiles.length === 0)}
+                        className="w-full bg-[#737373] hover:bg-[#525252] text-white py-4 rounded-sm font-mono font-bold uppercase tracking-[0.15em] text-sm transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        {status.type === 'loading' && !status.message.includes('Retrieving') ? (
+                          <>
+                            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+                            <span>{transferProgress?.status === 'uploading' ? `UPLOADING (${transferProgress.percent}%)` : 'GENERATING...'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Share2 className="w-4 h-4" />
+                            <span>{shareMode === 'collection' ? 'CREATE COLLECTION BOX' : 'GENERATE CODE'}</span>
+                          </>
+                        )}
+                      </button>
+                    </>
+                  )}
 
                   {/* Desktop close options button */}
                   <div className="hidden sm:block pt-1">
@@ -3313,7 +3768,7 @@ export default function App() {
           </div>
 
           {/* RECEIVE BOX */}
-          <div className={`ReceiveBox bg-white border border-[#141414] p-6 sm:p-8 rounded-none sm:rounded-md shadow-none sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] relative overflow-hidden space-y-6 text-center ${activeTab === 'get' ? 'block' : 'hidden sm:block'}`}>
+          <div ref={receiveBoxRef} className={`ReceiveBox bg-white border border-[#141414] p-6 sm:p-8 rounded-none sm:rounded-md shadow-none sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] relative overflow-hidden space-y-6 text-center ${activeTab === 'get' ? 'block' : 'hidden lg:block'}`}>
             <div className="Receive">
               <div className="Main">
                 <div className="transfer-box-inner space-y-6">
@@ -3461,9 +3916,12 @@ export default function App() {
                         <div className="space-y-6 text-left">
                           <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-sm space-y-2.5">
                             <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <span className="text-xs font-bold uppercase tracking-wider text-blue-700 font-mono">Pro Max Collection Box</span>
+                              <span className="text-xs font-bold uppercase tracking-wider text-blue-700 font-mono">
+                                {retrievedClip.tier === 'promax' ? 'Pro Max Collection Box' : 'Trial Collection Box'}
+                              </span>
                               <span className="text-xs font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm font-bold tabular-nums">
-                                {retrievedClip.submissions?.length || 0} Submissions
+                                {collectionCurrentCount}
+                                {collectionSubmissionLimit ? ` / ${collectionSubmissionLimit}` : ''} Submissions
                               </span>
                             </div>
                             <h3 className="text-sm font-bold text-[#141414]">{retrievedClip.content}</h3>
@@ -3487,10 +3945,105 @@ export default function App() {
 
                           {user && user.uid === retrievedClip.authorUid ? (
                             <div className="space-y-4">
-                              <div className="flex items-center justify-between gap-3 flex-wrap">
-                                <div className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                                  Incoming Submissions ({retrievedClip.submissions?.length || 0})
+                              {isRetrievedOwnerExpired && (
+                                <div className="p-3 bg-amber-50 border border-amber-300 rounded-sm flex items-center justify-between gap-3 flex-wrap">
+                                  <span className="text-xs font-mono text-amber-900">
+                                    Public share link expired. Submissions are preserved in your Vault.
+                                  </span>
+                                  {isProMax && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReactivate(retrievedClip.id)}
+                                      className="bg-[#141414] text-[#E4E3E0] px-3 py-1.5 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors shrink-0 cursor-pointer"
+                                    >
+                                      Reactivate Link (15m)
+                                    </button>
+                                  )}
                                 </div>
+                              )}
+                              {!isProMax && collectionSubmissionLimit && (
+                                <div className="p-3 bg-[#F9F9F8] border border-blue-200 rounded-sm flex items-center justify-between gap-3 flex-wrap">
+                                  <span className="text-[11px] font-mono text-neutral-700">
+                                    {isCollectionFull
+                                      ? 'Trial inbox full (5/5). Upgrade for unlimited submissions & bulk exports.'
+                                      : `Trial limit: ${collectionCurrentCount}/${collectionSubmissionLimit} submissions used.`}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCurrentView('pricing')}
+                                    className="bg-blue-700 text-white px-3 py-1.5 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-blue-800 transition-colors shrink-0 cursor-pointer"
+                                  >
+                                    Go Pro Max
+                                  </button>
+                                </div>
+                              )}
+                              <div className="space-y-2.5">
+                                <div className="flex items-center justify-between gap-3 flex-wrap">
+                                  <div className="text-xs font-bold uppercase tracking-wider text-neutral-800">
+                                    Incoming Submissions ({collectionCurrentCount}{collectionSubmissionLimit ? ` / ${collectionSubmissionLimit}` : ''})
+                                  </div>
+                                  {isProMax ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowInboxWebhookEditor((prev) => !prev)}
+                                      className={`px-2.5 py-1.5 border rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                                        retrievedClip.hasWebhook
+                                          ? 'border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100'
+                                          : 'border-[#141414]/25 bg-white text-neutral-700 hover:border-[#141414]'
+                                      }`}
+                                    >
+                                      <Bell className="w-3 h-3 shrink-0" />
+                                      <span>{retrievedClip.hasWebhook ? 'Webhook Alerts On' : 'Add Slack/Discord Alert'}</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setCurrentView('pricing')}
+                                      className="px-2.5 py-1.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer hover:bg-blue-100"
+                                    >
+                                      <Lock className="w-3 h-3 shrink-0" />
+                                      <span>Webhook Alerts · Pro Max</span>
+                                    </button>
+                                  )}
+                                </div>
+
+                                {isProMax && showInboxWebhookEditor && (
+                                  <div className="p-3 bg-[#F9F9F8] border border-[#141414]/25 rounded-sm space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-700">
+                                        Slack / Discord / Zapier Webhook URL
+                                      </span>
+                                      {inboxWebhookInput.trim() && (
+                                        <button
+                                          type="button"
+                                          disabled={testingWebhook}
+                                          onClick={() => handleTestWebhook(inboxWebhookInput, retrievedClip.content, retrievedClip.id)}
+                                          className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-700 underline cursor-pointer disabled:opacity-50"
+                                        >
+                                          {testingWebhook ? 'Sending...' : 'Test Alert'}
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                      <input
+                                        type="url"
+                                        placeholder="https://discord.com/api/webhooks/... or hooks.slack.com/..."
+                                        value={inboxWebhookInput}
+                                        onChange={(e) => setInboxWebhookInput(e.target.value)}
+                                        className="flex-1 p-2 border border-[#141414] rounded-sm font-mono text-xs bg-white placeholder:text-neutral-400 focus:outline-none"
+                                      />
+                                      <button
+                                        type="button"
+                                        disabled={savingInboxWebhook}
+                                        onClick={handleSaveInboxWebhook}
+                                        className="bg-[#141414] text-[#E4E3E0] px-3.5 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-neutral-800 whitespace-nowrap cursor-pointer disabled:opacity-50"
+                                      >
+                                        {savingInboxWebhook ? 'Saving...' : 'Save Alert'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
                                 {retrievedClip.submissions && retrievedClip.submissions.length > 0 && (() => {
                                   const allEntries = retrievedClip.submissions.flatMap((sub: any, sIdx: number) =>
                                     (sub.files || []).map((file: any) => ({
@@ -3500,20 +4053,72 @@ export default function App() {
                                     }))
                                   );
                                   if (allEntries.length === 0) return null;
+                                  const driveFolderUrl = driveExportFolderUrls[retrievedClip.id];
+                                  if (!isProMax) {
+                                    return (
+                                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => setCurrentView('pricing')}
+                                          className="border border-blue-300 bg-blue-50 text-blue-800 px-3 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-blue-100 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                                        >
+                                          <Lock className="w-3 h-3 shrink-0" />
+                                          <span>Unlock Bulk ZIP, Drive & Dropbox Export · Pro Max</span>
+                                        </button>
+                                      </div>
+                                    );
+                                  }
                                   return (
-                                    <button
-                                      type="button"
-                                      disabled={isZipping}
-                                      onClick={() => handleDownloadAllAsZip(allEntries, `collection-${retrievedClip.id}.zip`)}
-                                      className="bg-[#141414] text-[#E4E3E0] px-3.5 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
-                                    >
-                                      {isZipping ? (
-                                        <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
-                                      ) : (
-                                        <Archive className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                                      <button
+                                        type="button"
+                                        disabled={isZipping}
+                                        onClick={() => handleDownloadAllAsZip(allEntries, `collection-${retrievedClip.id}.zip`)}
+                                        className="bg-[#141414] text-[#E4E3E0] px-3.5 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                                      >
+                                        {isZipping ? (
+                                          <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                        ) : (
+                                          <Archive className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                        )}
+                                        <span>{isZipping ? 'Zipping...' : `Download All as ZIP (${allEntries.length})`}</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        disabled={exportingDriveClipId === retrievedClip.id}
+                                        onClick={() => handleExportCollectionToDrive(retrievedClip)}
+                                        className="border border-[#141414] bg-white text-[#141414] px-3 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-[#F9F9F8] transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                                      >
+                                        {exportingDriveClipId === retrievedClip.id ? (
+                                          <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                        ) : (
+                                          <GoogleDriveIcon className="w-3.5 h-3.5 shrink-0" />
+                                        )}
+                                        <span>{exportingDriveClipId === retrievedClip.id ? 'Saving to Drive...' : 'Save to Drive'}</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleExportCollectionToDropbox(retrievedClip)}
+                                        className="border border-[#141414] bg-white text-[#141414] px-3 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-[#F9F9F8] transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                                      >
+                                        <DropboxIcon className="w-3.5 h-3.5 shrink-0" />
+                                        <span>Save to Dropbox</span>
+                                      </button>
+
+                                      {driveFolderUrl && (
+                                        <a
+                                          href={driveFolderUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="border border-emerald-600 bg-emerald-50 text-emerald-800 px-3 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-emerald-100 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                                        >
+                                          <ExternalLink className="w-3 h-3 shrink-0" />
+                                          <span>Open Drive Folder</span>
+                                        </a>
                                       )}
-                                      <span>{isZipping ? 'Zipping...' : `Download All as ZIP (${allEntries.length})`}</span>
-                                    </button>
+                                    </div>
                                   );
                                 })()}
                               </div>
@@ -3564,6 +4169,18 @@ export default function App() {
                                 . New submissions are no longer accepted.
                               </p>
                             </div>
+                          ) : isCollectionFull ? (
+                            <div className="p-6 bg-[#F4F3F0] border-2 border-[#141414] rounded-sm text-center space-y-2">
+                              <div className="w-10 h-10 bg-[#141414] text-white mx-auto rounded-none flex items-center justify-center">
+                                <Lock className="w-5 h-5 text-amber-400" />
+                              </div>
+                              <h4 className="text-sm font-bold uppercase tracking-wider font-mono text-[#141414]">
+                                Collection Full ({collectionSubmissionLimit}/{collectionSubmissionLimit})
+                              </h4>
+                              <p className="text-xs font-mono text-neutral-600 max-w-sm mx-auto">
+                                This trial collection box has reached its {collectionSubmissionLimit}-submission limit. Ask the owner to upgrade to Pro Max for unlimited submissions.
+                              </p>
+                            </div>
                           ) : (
                             <div className="space-y-4 bg-[#F9F9F8] border-2 border-[#141414] p-5 rounded-sm shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
                               <div className="space-y-1">
@@ -3598,7 +4215,7 @@ export default function App() {
                                     <Share2 className="w-6 h-6 text-neutral-600" />
                                     <span className="text-xs font-bold uppercase tracking-wider text-[#141414]">Click to browse or drop files</span>
                                     <span className="text-[10px] text-neutral-600 font-mono">
-                                      Assignments, reports, media • MAX {retrievedClip?.tier === 'promax' ? '2 GB' : '500 MB'}
+                                      Assignments, reports, media • MAX {retrievedClip?.tier === 'promax' ? '2 GB' : retrievedClip?.tier === 'pro' ? '500 MB' : '10 MB'}
                                     </span>
                                   </div>
                                 </label>
@@ -3770,6 +4387,35 @@ export default function App() {
                 )}
               </div>
             )}
+          </div>
+          </div>
+
+          {/* Right Column: Active My Collections & Vault Dashboard */}
+          <div className={`lg:col-span-7 ${activeTab === 'vault' ? 'block' : 'hidden lg:block'}`}>
+            <CollectionsDashboard
+              user={user}
+              isGuest={isGuest}
+              isProMax={isProMax}
+              hasUsedTrialCollection={hasUsedTrialCollection}
+              clips={userClips}
+              loading={userClipsLoading}
+              reactivatingClips={reactivatingClips}
+              isZipping={isZipping}
+              exportingDriveClipId={exportingDriveClipId}
+              getSyncedNow={getSyncedNow}
+              formatBytes={formatBytes}
+              formatTime={formatTime}
+              onOpenInbox={openCollectionInbox}
+              onCopyCode={handleCopyCode}
+              onReactivate={handleReactivate}
+              onDeleteClip={handleDeleteOwnedClip}
+              onDownloadCollectionZip={handleDownloadCollectionZip}
+              onExportDrive={handleExportCollectionToDrive}
+              onExportDropbox={handleExportCollectionToDropbox}
+              onCreateCollection={handleStartNewCollection}
+              onUpgrade={() => setCurrentView('pricing')}
+              onLogin={() => setShowLoginModal(true)}
+            />
           </div>
         </div>
           {/* Status Messages */}

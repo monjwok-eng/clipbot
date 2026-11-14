@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { Readable } from "stream";
 import { fileURLToPath } from "url";
 import os from "os";
 import { createRequire } from 'module';
@@ -187,7 +188,7 @@ app.post("/api/webhook", express.raw({ type: 'application/json' }), async (req, 
   res.json({ received: true });
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // API Routes
@@ -537,6 +538,480 @@ app.post("/api/export-drive-file", async (req, res) => {
   } catch (err: any) {
     console.error("export-drive-file error:", err);
     return res.status(500).json({ error: err.message || "Failed to export Google Drive file" });
+  }
+});
+
+// --- Webhook & Cloud Export Helpers ---
+
+function isSafePublicWebhookUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      host === '::1' ||
+      host.endsWith('.local') ||
+      host.endsWith('.internal') ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('169.254.') ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formatBytesServer(bytes: number): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+async function dispatchWebhookNotification(
+  webhookUrl: string,
+  payload: {
+    event: 'collection.submission' | 'collection.test';
+    code: string;
+    collectionTitle: string;
+    contributorName: string;
+    fileCount: number;
+    totalBytes: number;
+    files: Array<{ fileName: string; fileSize?: number }>;
+    inboxUrl: string;
+    submittedAt: string;
+  }
+): Promise<void> {
+  const host = new URL(webhookUrl).hostname.toLowerCase();
+  const formattedSize = formatBytesServer(payload.totalBytes);
+  const isTest = payload.event === 'collection.test';
+  const title = isTest
+    ? `Test Alert: ${payload.collectionTitle}`
+    : `New Submission in "${payload.collectionTitle}"`;
+  const summaryLine = isTest
+    ? `Your Sendarro Collection Box (${payload.code}) webhook is connected and ready.`
+    : `${payload.contributorName} uploaded ${payload.fileCount} ${payload.fileCount === 1 ? 'file' : 'files'} (${formattedSize}).`;
+
+  let body: any;
+
+  if (host.includes('discord.com') || host.includes('discordapp.com')) {
+    body = {
+      username: 'Sendarro',
+      embeds: [
+        {
+          title,
+          description: summaryLine,
+          color: isTest ? 0x059669 : 0x1d4ed8,
+          fields: [
+            { name: 'Collection Code', value: payload.code || 'PREVIEW', inline: true },
+            { name: 'Contributor', value: payload.contributorName, inline: true },
+            { name: 'Payload', value: `${payload.fileCount} files (${formattedSize})`, inline: true },
+          ],
+          url: payload.inboxUrl || undefined,
+          timestamp: payload.submittedAt,
+        },
+      ],
+    };
+  } else if (host.includes('hooks.slack.com')) {
+    body = {
+      text: `${title} — ${summaryLine} (${payload.inboxUrl})`,
+      blocks: [
+        {
+          type: 'header',
+          text: { type: 'plain_text', text: title.slice(0, 150) },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `${summaryLine}\n*Code:* \`${payload.code || 'PREVIEW'}\`${payload.inboxUrl ? `\n<${payload.inboxUrl}|Open Inbox in Sendarro>` : ''}`,
+          },
+        },
+      ],
+    };
+  } else if (host.includes('webhook.office.com') || host.includes('logic.azure.com')) {
+    body = {
+      '@type': 'MessageCard',
+      '@context': 'http://schema.org/extensions',
+      themeColor: isTest ? '059669' : '1D4ED8',
+      summary: title,
+      sections: [
+        {
+          activityTitle: title,
+          activitySubtitle: summaryLine,
+          facts: [
+            { name: 'Collection Code', value: payload.code || 'PREVIEW' },
+            { name: 'Contributor', value: payload.contributorName },
+            { name: 'Files', value: `${payload.fileCount} (${formattedSize})` },
+          ],
+        },
+      ],
+    };
+  } else {
+    body = {
+      event: payload.event,
+      code: payload.code,
+      collectionTitle: payload.collectionTitle,
+      contributorName: payload.contributorName,
+      fileCount: payload.fileCount,
+      totalBytes: payload.totalBytes,
+      formattedSize,
+      files: payload.files,
+      inboxUrl: payload.inboxUrl,
+      submittedAt: payload.submittedAt,
+    };
+  }
+
+  const webhookRes = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!webhookRes.ok) {
+    const errText = await webhookRes.text().catch(() => '');
+    throw new Error(`Webhook endpoint returned HTTP ${webhookRes.status}: ${errText.slice(0, 200)}`);
+  }
+}
+
+app.post("/api/test-webhook", verifyToken, async (req, res) => {
+  try {
+    const { webhookUrl, collectionTitle, code } = req.body || {};
+    if (!webhookUrl || typeof webhookUrl !== 'string' || !isSafePublicWebhookUrl(webhookUrl)) {
+      return res.status(400).json({ error: "Please enter a valid public https:// Slack, Discord, or Webhook URL." });
+    }
+
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+    const origin = host ? `${protocol}://${host}` : '';
+
+    await dispatchWebhookNotification(webhookUrl.trim(), {
+      event: 'collection.test',
+      code: code || 'PREVIEW',
+      collectionTitle: (collectionTitle && String(collectionTitle).trim()) || 'My Collection Box',
+      contributorName: 'Sendarro Test',
+      fileCount: 1,
+      totalBytes: 1024 * 1024,
+      files: [{ fileName: 'sample-submission.pdf', fileSize: 1024 * 1024 }],
+      inboxUrl: code ? `${origin}/?code=${encodeURIComponent(code)}` : origin,
+      submittedAt: new Date().toISOString(),
+    });
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Test webhook error:", err);
+    return res.status(502).json({ error: err.message || "Failed to deliver test webhook." });
+  }
+});
+
+app.post("/api/notify-collection-webhook", async (req, res) => {
+  try {
+    const { code, contributorName, fileCount, totalBytes, files, submittedAt } = req.body || {};
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ error: "Collection code is required" });
+    }
+
+    const dbAdmin = getFirestore();
+    const [clipSnap, settingsSnap] = await Promise.all([
+      dbAdmin.collection('clips').doc(code).get(),
+      dbAdmin.collection('clips').doc(code).collection('private').doc('settings').get(),
+    ]);
+
+    if (!clipSnap.exists) {
+      return res.json({ notified: false, reason: 'clip_not_found' });
+    }
+
+    const clipData = clipSnap.data() || {};
+    const settingsData = settingsSnap.exists ? settingsSnap.data() || {} : {};
+    const webhookUrl = settingsData.webhookUrl;
+
+    if (!webhookUrl || typeof webhookUrl !== 'string' || !isSafePublicWebhookUrl(webhookUrl)) {
+      return res.json({ notified: false });
+    }
+
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+    const origin = host ? `${protocol}://${host}` : '';
+
+    await dispatchWebhookNotification(webhookUrl.trim(), {
+      event: 'collection.submission',
+      code,
+      collectionTitle: clipData.content || `Collection ${code}`,
+      contributorName: contributorName || 'Anonymous Contributor',
+      fileCount: Number(fileCount) || (Array.isArray(files) ? files.length : 0),
+      totalBytes: Number(totalBytes) || 0,
+      files: Array.isArray(files) ? files : [],
+      inboxUrl: `${origin}/?code=${encodeURIComponent(code)}`,
+      submittedAt: submittedAt || new Date().toISOString(),
+    });
+
+    return res.json({ notified: true });
+  } catch (err: any) {
+    console.warn("Collection webhook dispatch notice:", err?.message || err);
+    return res.json({ notified: false, error: err?.message || 'Webhook delivery failed' });
+  }
+});
+
+async function findOrCreateDriveFolder(
+  driveToken: string,
+  folderName: string,
+  parentId?: string
+): Promise<{ id: string; webViewLink?: string }> {
+  const safeName = folderName.replace(/[\\/:*?"<>|]/g, '_').trim() || 'Sendarro Export';
+  const escaped = safeName.replace(/'/g, "\\'");
+  let q = `mimeType = 'application/vnd.google-apps.folder' and trashed = false and name = '${escaped}'`;
+  if (parentId) {
+    q += ` and '${parentId}' in parents`;
+  }
+
+  const searchUrl = new URL('https://www.googleapis.com/drive/v3/files');
+  searchUrl.searchParams.set('q', q);
+  searchUrl.searchParams.set('fields', 'files(id,name,webViewLink)');
+  searchUrl.searchParams.set('pageSize', '1');
+
+  const searchRes = await fetch(searchUrl.toString(), {
+    headers: { Authorization: `Bearer ${driveToken}` },
+  });
+
+  if (searchRes.status === 401) {
+    const authErr: any = new Error('Google Drive session expired. Please reconnect your Drive account.');
+    authErr.status = 401;
+    throw authErr;
+  }
+
+  if (searchRes.ok) {
+    const searchData = await searchRes.json();
+    if (Array.isArray(searchData.files) && searchData.files.length > 0) {
+      return {
+        id: searchData.files[0].id,
+        webViewLink: searchData.files[0].webViewLink || `https://drive.google.com/drive/folders/${searchData.files[0].id}`,
+      };
+    }
+  }
+
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${driveToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: safeName,
+      mimeType: 'application/vnd.google-apps.folder',
+      ...(parentId ? { parents: [parentId] } : {}),
+    }),
+  });
+
+  if (createRes.status === 401) {
+    const authErr: any = new Error('Google Drive session expired. Please reconnect your Drive account.');
+    authErr.status = 401;
+    throw authErr;
+  }
+
+  if (!createRes.ok) {
+    const errText = await createRes.text().catch(() => '');
+    throw new Error(`Failed to create Drive folder "${safeName}": ${errText.slice(0, 200)}`);
+  }
+
+  const created = await createRes.json();
+  return {
+    id: created.id,
+    webViewLink: created.webViewLink || `https://drive.google.com/drive/folders/${created.id}`,
+  };
+}
+
+// Cloud-to-Google-Drive Inbox Exporter (streams files directly to Drive with user's Bearer token)
+app.post("/api/import-to-drive", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Google Drive authorization token required.' });
+    }
+    const driveToken = authHeader.slice('Bearer '.length).trim();
+    if (!driveToken) {
+      return res.status(401).json({ error: 'Google Drive authorization token required.' });
+    }
+
+    const { folderName, code, entries } = req.body || {};
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ error: 'No files provided to export.' });
+    }
+
+    const rootTitle = (folderName && String(folderName).trim()) || (code ? `Collection ${code}` : 'Sendarro Inbox');
+    const rootFolderName = code && !rootTitle.includes(code)
+      ? `Sendarro - ${rootTitle} (${code})`
+      : `Sendarro - ${rootTitle}`;
+
+    const rootFolder = await findOrCreateDriveFolder(driveToken, rootFolderName);
+    const subfolderCache = new Map<string, string>();
+
+    let uploadedCount = 0;
+    const errors: string[] = [];
+
+    for (const entry of entries) {
+      const rawFileName = (entry?.fileName && String(entry.fileName).trim()) || 'file';
+      const contributorName = entry?.contributorFolder ? String(entry.contributorFolder).trim() : '';
+      const mimeType = entry?.mimeType || 'application/octet-stream';
+      const rawUrl = entry?.downloadUrl ? String(entry.downloadUrl) : '';
+
+      if (!rawUrl) {
+        errors.push(`${rawFileName}: missing download URL`);
+        continue;
+      }
+
+      try {
+        let targetParentId = rootFolder.id;
+        if (contributorName) {
+          const cachedId = subfolderCache.get(contributorName);
+          if (cachedId) {
+            targetParentId = cachedId;
+          } else {
+            const sub = await findOrCreateDriveFolder(driveToken, contributorName, rootFolder.id);
+            subfolderCache.set(contributorName, sub.id);
+            targetParentId = sub.id;
+          }
+        }
+
+        let streamBody: any = null;
+        let contentLength: number | null = null;
+
+        // Check if hosted locally in Express uploadsDir (/api/files/:fileId/...)
+        const localMatch = rawUrl.match(/\/api\/files\/([^/?]+)/);
+        if (localMatch) {
+          const fileId = path.basename(decodeURIComponent(localMatch[1]));
+          const filePath = path.join(uploadsDir, fileId);
+          if (!fs.existsSync(filePath)) {
+            throw new Error('Local file expired or unavailable');
+          }
+          const stat = fs.statSync(filePath);
+          contentLength = stat.size;
+          streamBody = Readable.toWeb(fs.createReadStream(filePath));
+        } else {
+          let sourceUrl = rawUrl;
+          if (sourceUrl.includes('cloudflarestorage.com') && !sourceUrl.includes('X-Amz-Signature')) {
+            const matchKey = sourceUrl.match(/clips\/[^?]+/);
+            const r2 = getR2Client();
+            let bucketName = process.env.R2_BUCKET_NAME || process.env.S3_BUCKET_NAME || "sendarro-uploads";
+            if (bucketName === "R2 User Token") bucketName = "sendarro-uploads";
+            if (r2 && matchKey) {
+              const sanitizedName = rawFileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
+              const getCommand = new GetObjectCommand({
+                Bucket: bucketName,
+                Key: matchKey[0],
+                ResponseContentDisposition: `attachment; filename="${encodeURIComponent(sanitizedName)}"`,
+              });
+              sourceUrl = await getSignedUrl(r2, getCommand, { expiresIn: 3600 });
+            }
+          }
+
+          const upstreamRes = await fetch(sourceUrl);
+          if (!upstreamRes.ok || !upstreamRes.body) {
+            throw new Error(`Source file returned HTTP ${upstreamRes.status}`);
+          }
+          const headerLen = upstreamRes.headers.get('content-length');
+          if (headerLen && Number.isFinite(Number(headerLen))) {
+            contentLength = Number(headerLen);
+          }
+          streamBody = upstreamRes.body;
+        }
+
+        // Start Google Drive resumable upload session
+        const initHeaders: Record<string, string> = {
+          Authorization: `Bearer ${driveToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Type': mimeType,
+        };
+        if (contentLength !== null) {
+          initHeaders['X-Upload-Content-Length'] = String(contentLength);
+        }
+
+        const initRes = await fetch(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink',
+          {
+            method: 'POST',
+            headers: initHeaders,
+            body: JSON.stringify({
+              name: rawFileName,
+              parents: [targetParentId],
+            }),
+          }
+        );
+
+        if (initRes.status === 401) {
+          const authErr: any = new Error('Google Drive session expired. Please reconnect your Drive account.');
+          authErr.status = 401;
+          throw authErr;
+        }
+
+        if (!initRes.ok) {
+          const errText = await initRes.text().catch(() => '');
+          throw new Error(`Drive upload init failed (${initRes.status}): ${errText.slice(0, 180)}`);
+        }
+
+        const uploadUri = initRes.headers.get('location');
+        if (!uploadUri) {
+          throw new Error('Missing Google Drive resumable upload URL');
+        }
+
+        const putHeaders: Record<string, string> = {
+          'Content-Type': mimeType,
+        };
+        if (contentLength !== null) {
+          putHeaders['Content-Length'] = String(contentLength);
+        }
+
+        const putRes = await fetch(uploadUri, {
+          method: 'PUT',
+          headers: putHeaders,
+          body: streamBody,
+          duplex: 'half',
+        } as any);
+
+        if (!putRes.ok) {
+          const errText = await putRes.text().catch(() => '');
+          throw new Error(`Drive upload failed (${putRes.status}): ${errText.slice(0, 180)}`);
+        }
+
+        uploadedCount += 1;
+      } catch (fileErr: any) {
+        if (fileErr?.status === 401) {
+          throw fileErr;
+        }
+        console.warn(`Drive import failed for ${rawFileName}:`, fileErr?.message || fileErr);
+        errors.push(`${rawFileName}: ${fileErr?.message || 'upload failed'}`);
+      }
+    }
+
+    if (uploadedCount === 0 && errors.length > 0) {
+      return res.status(502).json({
+        error: errors[0],
+        errors,
+        uploadedCount: 0,
+        failedCount: errors.length,
+      });
+    }
+
+    return res.json({
+      success: true,
+      uploadedCount,
+      failedCount: errors.length,
+      errors,
+      folderId: rootFolder.id,
+      folderUrl: rootFolder.webViewLink,
+    });
+  } catch (err: any) {
+    console.error("import-to-drive error:", err);
+    return res.status(err?.status || 500).json({
+      error: err?.message || "Failed to export collection to Google Drive",
+    });
   }
 });
 
