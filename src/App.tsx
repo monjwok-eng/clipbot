@@ -3066,10 +3066,11 @@ export default function App() {
         </AnimatePresence>
 
         {/* Mobile / Tablet 3-Tab Toggle Bar (SHARE / GET / COLLECTIONS) */}
-        <div className="flex lg:hidden border border-[#141414] bg-[#E4E3E0] rounded-sm overflow-hidden mb-5">
+        <div className="grid grid-cols-3 lg:hidden border border-[#141414] bg-[#E4E3E0] rounded-sm overflow-hidden mb-5">
           <button 
+            type="button"
             onClick={() => setActiveTab('share')}
-            className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer ${
+            className={`h-11 px-1.5 flex items-center justify-center text-[10px] sm:text-xs font-mono font-bold uppercase tracking-[0.06em] sm:tracking-widest whitespace-nowrap transition-all cursor-pointer ${
               activeTab === 'share' 
                 ? 'bg-[#141414] text-[#E4E3E0]' 
                 : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
@@ -3078,8 +3079,9 @@ export default function App() {
             SHARE
           </button>
           <button 
+            type="button"
             onClick={() => setActiveTab('get')}
-            className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer border-l border-[#141414] ${
+            className={`h-11 px-1.5 flex items-center justify-center text-[10px] sm:text-xs font-mono font-bold uppercase tracking-[0.06em] sm:tracking-widest whitespace-nowrap transition-all cursor-pointer border-l border-[#141414] ${
               activeTab === 'get' 
                 ? 'bg-[#141414] text-[#E4E3E0]' 
                 : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
@@ -3088,14 +3090,16 @@ export default function App() {
             GET
           </button>
           <button 
+            type="button"
             onClick={() => setActiveTab('vault')}
-            className={`flex-1 py-3 text-xs font-mono font-bold uppercase tracking-widest transition-all cursor-pointer border-l border-[#141414] tabular-nums ${
+            className={`h-11 px-1.5 flex items-center justify-center gap-1 text-[10px] sm:text-xs font-mono font-bold uppercase tracking-[0.06em] sm:tracking-widest whitespace-nowrap transition-all cursor-pointer border-l border-[#141414] tabular-nums ${
               activeTab === 'vault' 
                 ? 'bg-[#141414] text-[#E4E3E0]' 
                 : 'bg-[#E4E3E0] text-[#141414] hover:bg-neutral-200'
             }`}
           >
-            COLLECTIONS{collectionCountBadge > 0 ? ` (${collectionCountBadge})` : ''}
+            <span>COLLECTIONS</span>
+            {collectionCountBadge > 0 && <span>({collectionCountBadge})</span>}
           </button>
         </div>
 
@@ -3225,11 +3229,11 @@ export default function App() {
                   </div>
 
                   {/* Mode Tabs: TEXT CLIP / FILE CLIP / COLLECTION */}
-                  <div className="flex border-b border-[#141414]/20 pt-1">
+                  <div className="grid grid-cols-3 border-b border-[#141414]/20 pt-1">
                     <button 
                       type="button"
                       onClick={() => setShareMode('text')}
-                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
+                      className={`h-10 px-1 flex items-center justify-center text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                         shareMode === 'text' 
                           ? 'border-b-2 border-[#141414] text-[#141414]' 
                           : 'text-neutral-400 hover:text-neutral-700'
@@ -3240,7 +3244,7 @@ export default function App() {
                     <button 
                       type="button"
                       onClick={() => setShareMode('file')}
-                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
+                      className={`h-10 px-1 flex items-center justify-center text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                         shareMode === 'file' 
                           ? 'border-b-2 border-[#141414] text-[#141414]' 
                           : 'text-neutral-400 hover:text-neutral-700'
@@ -3251,7 +3255,7 @@ export default function App() {
                     <button 
                       type="button"
                       onClick={() => setShareMode('collection')}
-                      className={`flex-1 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
+                      className={`h-10 px-1 flex items-center justify-center gap-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                         shareMode === 'collection' 
                           ? 'border-b-2 border-blue-600 text-blue-700' 
                           : 'text-blue-600/80 hover:text-blue-800'
