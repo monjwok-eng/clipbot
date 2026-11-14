@@ -69,11 +69,13 @@ import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, UploadTask } fr
 import { db, auth, storage } from './firebase';
 import { Onboarding } from './components/Onboarding';
 import { IntegrationModal } from './components/IntegrationModal';
+import { GoogleDrivePickerModal, PickedDriveLink } from './components/GoogleDrivePickerModal';
 import { GoogleDriveIcon, DropboxIcon } from './components/CloudIcons';
 import { ProductPage } from './components/ProductPage';
 import { PricingPage } from './components/PricingPage';
 import { SendarroLogo } from './components/SendarroLogo';
 import { openGoogleDrivePicker } from './utils/googleDrive';
+import { connectGoogleDrive, getDriveAccessToken as getCachedDriveToken, clearDriveAccessToken } from './services/googleDrive';
 import { openDropboxChooser } from './utils/dropbox';
 import { getInitialLanguage, translations, LanguageCode, setAppLanguage } from './utils/i18n';
 import { LanguageSelector } from './components/LanguageSelector';
@@ -520,6 +522,8 @@ export default function App() {
     setAppLanguage(currentLang);
   }, [currentLang]);
   const [activeIntegration, setActiveIntegration] = useState<string | null>(null);
+  const [showDrivePicker, setShowDrivePicker] = useState(false);
+  const [driveToken, setDriveToken] = useState<string | null>(() => getCachedDriveToken());
   useEffect(() => {
     if (showLoginModal) {
       document.body.style.overflow = 'hidden';
@@ -801,19 +805,41 @@ export default function App() {
     localStorage.setItem('recentCodes', JSON.stringify(updated));
   };
 
-  const handleConnectDrive = async () => {
+  const handleRequestDriveConnect = async (forceAccountSelect = false) => {
+    setStatus({ type: 'loading', message: 'Connecting Google Drive...' });
+    try {
+      if (forceAccountSelect) {
+        clearDriveAccessToken();
+      }
+      const token = await connectGoogleDrive(forceAccountSelect);
+      setDriveToken(token);
+      localStorage.setItem('sendarro_drive_connected', 'true');
+      setShowDrivePicker(true);
+      setStatus({ type: 'idle', message: '' });
+    } catch (err: any) {
+      setShowDrivePicker(true);
+      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+        setStatus({ type: 'idle', message: '' });
+      } else {
+        setStatus({ type: 'error', message: err?.message || 'Could not authorize Google Drive.' });
+      }
+    }
+  };
+
+  const handleOpenNativeDrivePicker = async () => {
+    setShowDrivePicker(false);
     setStatus({ type: 'loading', message: 'Opening Google Drive...' });
     try {
       await openGoogleDrivePicker(
         (picked) => {
           localStorage.setItem('sendarro_drive_connected', 'true');
-          if (picked.file) {
-            addIncomingFiles([picked.file]);
-            setStatus({ type: 'success', message: `Added ${picked.name} from Google Drive!` });
-          } else if (picked.url) {
+          if (picked.url) {
             setManualText(prev => prev ? `${prev}\n${picked.url}` : picked.url!);
             setShareMode('text');
             setStatus({ type: 'success', message: `Attached Google Drive link for ${picked.name}!` });
+          } else if (picked.file) {
+            addIncomingFiles([picked.file]);
+            setStatus({ type: 'success', message: `Added ${picked.name} from Google Drive!` });
           }
         },
         (err) => {
@@ -823,6 +849,16 @@ export default function App() {
     } catch (err: any) {
       setStatus({ type: 'error', message: err?.message || 'Could not open Google Drive.' });
     }
+  };
+
+  const handleConnectDrive = async () => {
+    const existingToken = driveToken || getCachedDriveToken();
+    if (existingToken) {
+      setDriveToken(existingToken);
+      setShowDrivePicker(true);
+      return;
+    }
+    await handleRequestDriveConnect(false);
   };
 
   const handleConnectDropbox = async (customKey?: string) => {
@@ -1003,7 +1039,6 @@ export default function App() {
     } else if (service === 'dropbox') {
       handleConnectDropbox();
     }
-    setActiveIntegration(service);
   };
 
   useEffect(() => {
@@ -1174,6 +1209,9 @@ export default function App() {
       localStorage.removeItem('clipcloud_user_tier');
       localStorage.removeItem('sendarro_drive_connected');
       localStorage.removeItem('sendarro_dropbox_connected');
+      clearDriveAccessToken();
+      setDriveToken(null);
+      setShowDrivePicker(false);
     } catch (err) {
       console.error(err);
     }
@@ -2380,6 +2418,34 @@ export default function App() {
                 localStorage.setItem('sendarro_dropbox_connected', 'true');
                 handleConnectDropbox();
               }
+            }}
+          />
+
+          {/* Google Drive Picker Modal */}
+          <GoogleDrivePickerModal
+            isOpen={showDrivePicker}
+            onClose={() => setShowDrivePicker(false)}
+            token={driveToken}
+            onRequestConnect={handleRequestDriveConnect}
+            onUseNativePicker={handleOpenNativeDrivePicker}
+            onFilesSelected={(files) => {
+              addIncomingFiles(files);
+              setShareMode('file');
+              setIsSendExpanded(true);
+              setStatus({
+                type: 'success',
+                message: `Added ${files.length} file${files.length === 1 ? '' : 's'} from Google Drive!`
+              });
+            }}
+            onLinksSelected={(links: PickedDriveLink[]) => {
+              const formatted = links.map((l) => `${l.name}: ${l.url}`).join('\n');
+              setManualText((prev) => (prev ? `${prev}\n${formatted}` : formatted));
+              setShareMode('text');
+              setIsSendExpanded(true);
+              setStatus({
+                type: 'success',
+                message: `Attached ${links.length} Google Drive link${links.length === 1 ? '' : 's'}!`
+              });
             }}
           />
 

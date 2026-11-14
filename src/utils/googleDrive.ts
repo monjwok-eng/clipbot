@@ -130,24 +130,10 @@ export async function openGoogleDrivePicker(
           }
 
           const errJson = await exportRes.json().catch(() => ({}));
-          console.warn('Server export reported issue, falling back to link:', errJson);
-
-          onSelect({
-            id: fileId,
-            name: fileName,
-            mimeType,
-            sizeBytes: doc.sizeBytes || 0,
-            url: doc.url,
-          });
-        } catch (fetchErr) {
-          console.warn('Direct media download failed, using link:', fetchErr);
-          onSelect({
-            id: fileId,
-            name: fileName,
-            mimeType,
-            sizeBytes: doc.sizeBytes || 0,
-            url: doc.url,
-          });
+          throw new Error(errJson.error || 'Failed to export document from Google Drive');
+        } catch (fetchErr: any) {
+          console.error('Direct media download failed:', fetchErr);
+          onError(fetchErr);
         }
       }
     };

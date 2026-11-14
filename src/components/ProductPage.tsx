@@ -93,6 +93,24 @@ export const ProductPage: React.FC<ProductPageProps> = ({
                         {t.faqA1}
                     </p>
                 </div>
+                <div className="space-y-2 border-b border-[#141414]/10 pb-4">
+                    <h4 className="text-sm font-bold text-[#141414]">Is Sendarro really free to use?</h4>
+                    <p className="text-xs sm:text-sm text-neutral-600 font-mono leading-relaxed">
+                        Yes! You can start sharing text and files immediately as a guest. Our Free tier provides instant, secure transfers without requiring an account. We offer Pro plans for users needing longer persistence, larger file sizes, and advanced team collaboration tools.
+                    </p>
+                </div>
+                <div className="space-y-2 border-b border-[#141414]/10 pb-4">
+                    <h4 className="text-sm font-bold text-[#141414]">How secure are my shared files?</h4>
+                    <p className="text-xs sm:text-sm text-neutral-600 font-mono leading-relaxed">
+                        Security is our priority. All transfers are end-to-end encrypted. Clips and files are stored temporarily on secure servers and are automatically purged upon expiration, ensuring your data never lingers longer than necessary.
+                    </p>
+                </div>
+                <div className="space-y-2 border-b border-[#141414]/10 pb-4">
+                    <h4 className="text-sm font-bold text-[#141414]">Can I use Sendarro on mobile and desktop?</h4>
+                    <p className="text-xs sm:text-sm text-neutral-600 font-mono leading-relaxed">
+                        Absolutely. Sendarro is a browser-based Universal Clipboard Protocol. It works seamlessly on any device with a modern browser, eliminating the need for app installations or complex Bluetooth pairing.
+                    </p>
+                </div>
             </div>
         </div>
 
