@@ -52,7 +52,16 @@ export const PricingPage: React.FC<PricingPageProps> = ({
                 </div>
                 <span className="text-2xl sm:text-3xl font-bold font-mono text-[#141414]">$0</span>
               </div>
-              {/* ... features list ... */}
+              <ul className="space-y-2.5 text-xs font-mono text-neutral-700 pt-2">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>10MB file transfer ceiling</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>10,000 characters &amp; ZIP download</span>
+                </li>
+              </ul>
             </div>
             <button onClick={onBackToApp} className={`w-full min-h-[44px] py-3 px-4 rounded-sm font-bold uppercase tracking-wider text-xs transition-all cursor-pointer ${tier === 'free' ? 'bg-[#141414] text-[#E4E3E0]' : 'border-2 border-[#141414] text-[#141414] hover:bg-[#141414] hover:text-[#E4E3E0]'}`}>
               {tier === 'free' ? 'Current Plan' : 'Get Started Free'}
@@ -75,6 +84,16 @@ export const PricingPage: React.FC<PricingPageProps> = ({
                   <span className="text-[10px] uppercase tracking-wider font-mono text-neutral-500 block">/ month</span>
                 </div>
               </div>
+              <ul className="space-y-2.5 text-xs font-mono text-neutral-700 pt-2">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span><strong>500MB</strong> file ceiling via R2</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>100k chars, 24h clips &amp; Custom Aliases</span>
+                </li>
+              </ul>
             </div>
             <button onClick={() => onUpgrade('https://buy.stripe.com/test_5kQ4gz8Yycn1dzN8nebwk00')} className={`w-full min-h-[44px] py-3 px-4 rounded-sm font-bold uppercase tracking-wider text-xs transition-all cursor-pointer ${tier === 'pro' ? 'bg-emerald-500 text-[#141414] cursor-default border border-[#141414]' : 'bg-[#141414] text-white hover:bg-emerald-600 hover:text-white'}`}>
               {tier === 'pro' ? 'Active Plan' : t.upgrade}
@@ -97,6 +116,16 @@ export const PricingPage: React.FC<PricingPageProps> = ({
                 </div>
               </div>
               <p className="text-xs text-blue-300 font-mono">{t.compProMaxDesc}</p>
+              <ul className="space-y-2 text-xs font-mono text-neutral-300 pt-1">
+                <li className="flex items-center gap-2">
+                  <Zap className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400 shrink-0" />
+                  <span><strong>2GB</strong> direct R2 file ceiling</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Zap className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400 shrink-0" />
+                  <span>Collection Deadlines &amp; Download All as ZIP</span>
+                </li>
+              </ul>
             </div>
             <button onClick={() => onUpgrade('https://buy.stripe.com/test_6oU14ngr072HdzN6f6bwk01')} className={`w-full min-h-[44px] py-3 px-4 rounded-sm font-bold uppercase tracking-wider text-xs transition-all cursor-pointer ${tier === 'promax' ? 'bg-emerald-400 text-[#141414] cursor-default' : 'bg-white text-[#141414] hover:bg-emerald-400 transition-colors'}`}>
               {tier === 'promax' ? 'Active Plan' : t.goProMax}
@@ -148,8 +177,14 @@ export const PricingPage: React.FC<PricingPageProps> = ({
                     <td className="p-4 text-neutral-600">No (Apple Only)</td>
                   </tr>
                   <tr>
-                    <td className="p-4 font-bold text-[#141414]">Team Inbox</td>
-                    <td className="p-4 bg-emerald-50 text-emerald-900 font-bold">Yes (Pro Max)</td>
+                    <td className="p-4 font-bold text-[#141414]">File Size Ceiling</td>
+                    <td className="p-4 bg-emerald-50 text-emerald-900 font-bold tabular-nums">500MB (Pro) / 2GB (Pro Max)</td>
+                    <td className="p-4 text-neutral-600">No File Hosting</td>
+                    <td className="p-4 text-neutral-600">Same-Room Only</td>
+                  </tr>
+                  <tr>
+                    <td className="p-4 font-bold text-[#141414]">Team Inbox &amp; Deadlines</td>
+                    <td className="p-4 bg-emerald-50 text-emerald-900 font-bold">Yes + Bulk ZIP (Pro Max)</td>
                     <td className="p-4 text-neutral-600">No</td>
                     <td className="p-4 text-neutral-600">No</td>
                   </tr>

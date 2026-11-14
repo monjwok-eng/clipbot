@@ -54,7 +54,7 @@ export const ProductPage: React.FC<ProductPageProps> = ({
             </div>
             <h3 className="text-lg sm:text-xl font-bold tracking-tight text-[#141414]">Multi-File Payload Stream</h3>
             <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed font-mono">
-              Transfer documents, design mocks, PDFs, and code archives up to 50MB per bundle with real-time transfer telemetry and cloud storage integration.
+              Transfer documents, design mocks, PDFs, and large archives up to 500MB (Pro) and 2GB (Pro Max) via direct Cloudflare R2 streaming, with one-click ZIP packaging and cloud storage integration.
             </p>
           </div>
 

@@ -38,4 +38,18 @@ body {
   .animate-neon-edge {
     animation: neonEdgePulse 4s ease-in-out infinite;
   }
+
+  @keyframes indeterminateSlide {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(350%);
+    }
+  }
+
+  .animate-indeterminate-loader {
+    width: 35%;
+    animation: indeterminateSlide 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
 }

@@ -51,8 +51,8 @@ export default async function handler(req: any, res: any) {
       ContentType: contentType,
     });
 
-    // 15-minute presigned upload URL
-    const uploadUrl = await getSignedUrl(r2, putCommand, { expiresIn: 900 });
+    // 1-hour presigned upload URL to support large uploads up to 2GB
+    const uploadUrl = await getSignedUrl(r2, putCommand, { expiresIn: 3600 });
 
     // Generate authenticated presigned download URL with attachment header (valid for 7 days)
     const getCommand = new GetObjectCommand({

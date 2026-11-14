@@ -374,8 +374,8 @@ app.post("/api/get-upload-url", optionalVerifyToken, async (req, res) => {
         ContentType: fileType || "application/octet-stream",
       });
 
-      // Presigned URL valid for 15 minutes (900 seconds)
-      const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 900 });
+      // Presigned URL valid for 1 hour (3600 seconds) to support large uploads up to 2GB
+      const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 3600 });
 
       // Presigned GET download URL with attachment header (valid for 7 days)
       const getCommand = new GetObjectCommand({

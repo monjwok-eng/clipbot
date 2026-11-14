@@ -244,7 +244,7 @@ export const MainLandingPage: React.FC<MainLandingPageProps> = ({
               </div>
               <h3 className="text-lg font-bold uppercase tracking-wider text-[#141414]">Multi-File Payload</h3>
               <p className="text-xs sm:text-sm text-neutral-700 leading-relaxed font-mono">
-                Drop archives, code snippets, high-resolution imagery, and PDFs with real-time byte telemetry up to 50MB per bundle.
+                Drop archives, code snippets, high-resolution imagery, and PDFs with real-time byte telemetry up to 2GB per bundle.
               </p>
             </div>
 
@@ -389,6 +389,10 @@ export const MainLandingPage: React.FC<MainLandingPageProps> = ({
                 <ul className="space-y-2.5 text-xs font-mono text-neutral-700 pt-2 border-t border-[#141414]/15">
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span><strong>500MB</strong> file upload ceiling (R2)</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span><strong>100,000</strong> character limit</span>
                   </li>
                   <li className="flex items-center gap-2">
@@ -397,11 +401,7 @@ export const MainLandingPage: React.FC<MainLandingPageProps> = ({
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Custom code aliases (e.g. MY-CLIP)</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Burn on Read self-destruction</span>
+                    <span>Custom code aliases &amp; Burn on Read</span>
                   </li>
                 </ul>
               </div>
@@ -433,11 +433,11 @@ export const MainLandingPage: React.FC<MainLandingPageProps> = ({
                 <ul className="space-y-2.5 text-xs font-mono text-neutral-300 pt-2 border-t border-white/20">
                   <li className="flex items-center gap-2">
                     <Zap className="w-4 h-4 text-blue-400 fill-blue-400 shrink-0" />
-                    <span><strong>50MB</strong> file upload ceiling</span>
+                    <span><strong>2GB</strong> file upload ceiling via R2</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Zap className="w-4 h-4 text-blue-400 fill-blue-400 shrink-0" />
-                    <span><strong>Collection Drop Boxes</strong> (multi-submit)</span>
+                    <span><strong>Collection Boxes</strong> + Deadlines &amp; ZIP</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Zap className="w-4 h-4 text-blue-400 fill-blue-400 shrink-0" />

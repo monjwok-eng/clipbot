@@ -31,8 +31,11 @@ import {
   MessageSquare,
   LogIn,
   MoreHorizontal,
-  Camera
+  Camera,
+  Archive,
+  Calendar
 } from 'lucide-react';
+import JSZip from 'jszip';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -545,6 +548,9 @@ export default function App() {
   const [isLinkUnavailable, setIsLinkUnavailable] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [burnOnRead, setBurnOnRead] = useState(false);
+  const [collectionDeadline, setCollectionDeadline] = useState<string>('');
+  const [isZipping, setIsZipping] = useState(false);
+  const [deadlineNowTick, setDeadlineNowTick] = useState<number>(() => Date.now());
   const [contributorName, setContributorName] = useState<string>('');
   const [contributorFiles, setContributorFiles] = useState<File[]>([]);
   const [transferProgress, setTransferProgress] = useState<{
@@ -611,25 +617,63 @@ export default function App() {
   }, [retrievedClip]);
 
   const activeUploadTasksRef = useRef<UploadTask[]>([]);
+  const activeXhrsRef = useRef<XMLHttpRequest[]>([]);
+  const uploadCancelledRef = useRef<boolean>(false);
+  const pendingUploadCodeRef = useRef<string | null>(null);
   const receiverUnsubRef = useRef<(() => void) | null>(null);
+
+  const getMaxFileSizeBytes = () => {
+    if (isProMax) return 2 * 1024 * 1024 * 1024;
+    if (isPro) return 500 * 1024 * 1024;
+    return 10 * 1024 * 1024;
+  };
+
+  const getMaxFileSizeLabel = () => {
+    if (isProMax) return '2 GB';
+    if (isPro) return '500 MB';
+    return '10 MB';
+  };
+
+  const getDeadlineMillis = (deadline: any): number | null => {
+    if (!deadline) return null;
+    if (typeof deadline.toMillis === 'function') return deadline.toMillis();
+    const parsed = new Date(deadline).getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const toLocalDateTimeInputValue = (date: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+
+  useEffect(() => {
+    if (!retrievedClip?.isCollection || !retrievedClip?.submissionDeadline) return;
+    setDeadlineNowTick(Date.now());
+    const interval = setInterval(() => {
+      setDeadlineNowTick(Date.now());
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [retrievedClip?.id, retrievedClip?.isCollection, retrievedClip?.submissionDeadline]);
 
   const formatBytes = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleDownloadFile = async (rawUrl: string | undefined, fileName: string, clipId?: string) => {
+  const resolveDownloadUrl = async (
+    rawUrl: string | undefined,
+    fileName: string,
+    clipId?: string
+  ): Promise<string | undefined> => {
     let downloadUrl = rawUrl;
 
-    // Dynamic resolution if URL was missing or upload was in progress
     if (!downloadUrl) {
       const targetCode = clipId || retrievedClip?.id || inputCode;
       if (targetCode && fileName) {
         try {
-          setStatus({ type: 'loading', message: `Resolving link for ${fileName}...` });
           const storageRef = ref(storage, `clips/${targetCode}/${fileName}`);
           downloadUrl = await getDownloadURL(storageRef);
         } catch (err) {
@@ -639,19 +683,6 @@ export default function App() {
       }
     }
 
-    if (!downloadUrl) {
-      setStatus({ type: 'error', message: 'No download URL available for this file.' });
-      return;
-    }
-    if (isApiBlocked) {
-      setStatus({ 
-        type: 'error', 
-        message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
-      });
-      return;
-    }
-
-    // If the URL is an unsigned Cloudflare R2 S3 link, automatically sign it on-demand
     if (downloadUrl && downloadUrl.includes('cloudflarestorage.com') && !downloadUrl.includes('X-Amz-Signature')) {
       try {
         const signRes = await fetch('/api/get-download-url', {
@@ -668,6 +699,28 @@ export default function App() {
       } catch (signErr) {
         console.warn("On-demand signing notice, using direct link:", signErr);
       }
+    }
+
+    return downloadUrl;
+  };
+
+  const handleDownloadFile = async (rawUrl: string | undefined, fileName: string, clipId?: string) => {
+    if (isApiBlocked) {
+      setStatus({ 
+        type: 'error', 
+        message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.' 
+      });
+      return;
+    }
+
+    if (!rawUrl) {
+      setStatus({ type: 'loading', message: `Resolving link for ${fileName}...` });
+    }
+    const downloadUrl = await resolveDownloadUrl(rawUrl, fileName, clipId);
+
+    if (!downloadUrl) {
+      setStatus({ type: 'error', message: 'No download URL available for this file.' });
+      return;
     }
 
     setStatus({ type: 'loading', message: `Downloading ${fileName}...` });
@@ -718,14 +771,101 @@ export default function App() {
     }
   };
 
+  const handleDownloadAllAsZip = async (
+    entries: { url?: string; fileName: string; folder?: string }[],
+    zipFileName: string
+  ) => {
+    if (!entries || entries.length === 0 || isZipping) return;
+    if (isApiBlocked) {
+      setStatus({
+        type: 'error',
+        message: 'Security cookie blocked. Please click "Open in New Tab" to authenticate your session.'
+      });
+      return;
+    }
+
+    setIsZipping(true);
+    setStatus({ type: 'loading', message: `Packaging 0/${entries.length} files into ZIP...` });
+
+    try {
+      const zip = new JSZip();
+      const usedPaths = new Set<string>();
+      let completed = 0;
+
+      for (const entry of entries) {
+        const resolvedUrl = await resolveDownloadUrl(entry.url, entry.fileName, retrievedClip?.id);
+        if (!resolvedUrl) {
+          throw new Error(`Missing download link for ${entry.fileName}`);
+        }
+        const res = await fetch(resolvedUrl);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch ${entry.fileName} (HTTP ${res.status})`);
+        }
+        const blob = await res.blob();
+
+        const safeFolder = entry.folder
+          ? entry.folder.replace(/[\\/:*?"<>|]/g, '_').trim()
+          : '';
+        const rawName = (entry.fileName || `file-${completed + 1}`).replace(/[\\/:*?"<>|]/g, '_');
+        let targetPath = safeFolder ? `${safeFolder}/${rawName}` : rawName;
+
+        if (usedPaths.has(targetPath)) {
+          const dotIdx = rawName.lastIndexOf('.');
+          const base = dotIdx > 0 ? rawName.slice(0, dotIdx) : rawName;
+          const ext = dotIdx > 0 ? rawName.slice(dotIdx) : '';
+          let counter = 2;
+          while (usedPaths.has(safeFolder ? `${safeFolder}/${base} (${counter})${ext}` : `${base} (${counter})${ext}`)) {
+            counter++;
+          }
+          targetPath = safeFolder ? `${safeFolder}/${base} (${counter})${ext}` : `${base} (${counter})${ext}`;
+        }
+        usedPaths.add(targetPath);
+
+        zip.file(targetPath, blob);
+        completed += 1;
+        setStatus({ type: 'loading', message: `Packaging ${completed}/${entries.length} files into ZIP...` });
+      }
+
+      setStatus({ type: 'loading', message: 'Compressing ZIP archive...' });
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const blobUrl = window.URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = blobUrl;
+      a.download = zipFileName;
+      document.body.appendChild(a);
+      a.click();
+
+      setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+      }, 1500);
+
+      setStatus({ type: 'success', message: `Downloaded ${zipFileName} (${entries.length} files)!` });
+    } catch (err: any) {
+      console.error('ZIP packaging failed:', err);
+      setStatus({ type: 'error', message: err?.message || 'Failed to create ZIP archive.' });
+    } finally {
+      setIsZipping(false);
+    }
+  };
+
   const handleCancelUpload = async (codeToCancel?: string) => {
+    uploadCancelledRef.current = true;
     if (activeUploadTasksRef.current.length > 0) {
       activeUploadTasksRef.current.forEach(task => {
         try { task.cancel(); } catch (e) {}
       });
       activeUploadTasksRef.current = [];
     }
-    const targetCode = codeToCancel || code;
+    if (activeXhrsRef.current.length > 0) {
+      activeXhrsRef.current.forEach(xhr => {
+        try { xhr.abort(); } catch (e) {}
+      });
+      activeXhrsRef.current = [];
+    }
+    const targetCode = codeToCancel || code || pendingUploadCodeRef.current;
+    pendingUploadCodeRef.current = null;
     if (targetCode) {
       try {
         await deleteDoc(doc(db, 'clips', targetCode));
@@ -766,12 +906,12 @@ export default function App() {
 
     const combined = [...selectedFiles, ...uniqueNewFiles];
     const totalSize = combined.reduce((acc, f) => acc + f.size, 0);
-    const maxAllowedSize = (isProMax ? 50 : 10) * 1024 * 1024;
+    const maxAllowedSize = getMaxFileSizeBytes();
 
     if (totalSize > maxAllowedSize) {
       setStatus({
         type: 'error',
-        message: `Max limit exceeded! Total size (${(totalSize / (1024 * 1024)).toFixed(1)}MB) exceeds ${isProMax ? '50MB' : '10MB'} limit.`
+        message: `Max limit exceeded! Total size (${formatBytes(totalSize)}) exceeds ${getMaxFileSizeLabel()} limit.`
       });
     } else if (duplicates.length === 0) {
       setStatus({ type: 'idle', message: '' });
@@ -791,7 +931,7 @@ export default function App() {
     setSelectedFiles(prev => {
       const updated = prev.filter((_, i) => i !== index);
       const totalSize = updated.reduce((acc, f) => acc + f.size, 0);
-      const maxAllowedSize = (isProMax ? 50 : 10) * 1024 * 1024;
+      const maxAllowedSize = getMaxFileSizeBytes();
       if (totalSize <= maxAllowedSize && status.type === 'error' && status.message.includes('Max limit')) {
         setStatus({ type: 'idle', message: '' });
       }
@@ -1516,10 +1656,21 @@ export default function App() {
     }
 
     const totalFileSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
-    const maxAllowedSize = (isProMax ? 50 : 10) * 1024 * 1024;
+    const maxAllowedSize = getMaxFileSizeBytes();
     if (selectedFiles.length > 0 && totalFileSize > maxAllowedSize) {
-      setStatus({ type: 'error', message: `Files too large (${(totalFileSize / (1024 * 1024)).toFixed(1)}MB total). Max ${isProMax ? '50' : '10'}MB allowed.` });
+      setStatus({ type: 'error', message: `Files too large (${formatBytes(totalFileSize)} total). Max ${getMaxFileSizeLabel()} allowed.` });
       return;
+    }
+
+    const isCollectionMode = shareMode === 'collection';
+    let parsedDeadlineDate: Date | null = null;
+    if (isCollectionMode && collectionDeadline) {
+      const candidate = new Date(collectionDeadline);
+      if (isNaN(candidate.getTime()) || candidate.getTime() <= getSyncedNow()) {
+        setStatus({ type: 'error', message: 'Submission deadline must be a valid future date & time.' });
+        return;
+      }
+      parsedDeadlineDate = candidate;
     }
 
     const maxChars = isPro ? 100000 : 10000;
@@ -1556,20 +1707,16 @@ export default function App() {
     }
 
     const savedText = text;
-    const path = `clips/${newCode}`;
     const hasFiles = selectedFiles.length > 0;
     const filesToUpload = [...selectedFiles];
     const totalBytes = filesToUpload.reduce((sum, f) => sum + f.size, 0);
 
-    // 1. INSTANT SIGNALING CODE DISPLAY (0ms delay)
-    setCode(newCode);
-    if (isPro && customCodeInput.trim()) addRecentCode(newCode);
-    setTimeLeft(expirationSeconds);
-    setSelectedFiles([]);
-    setManualText(''); 
-    setCustomCodeInput('');
+    uploadCancelledRef.current = false;
+    activeXhrsRef.current = [];
+    activeUploadTasksRef.current = [];
 
     if (hasFiles) {
+      pendingUploadCodeRef.current = newCode;
       setTransferProgress({
         totalBytes,
         bytesTransferred: 0,
@@ -1578,53 +1725,19 @@ export default function App() {
         fileName: filesToUpload.length === 1 ? filesToUpload[0].name : `${filesToUpload.length} files`,
         fileCount: filesToUpload.length
       });
-      setStatus({ type: 'loading', message: `Code ready! Uploading ${filesToUpload.length} file(s)...` });
+      setStatus({ type: 'loading', message: `Uploading ${filesToUpload.length} file(s)...` });
     } else {
+      pendingUploadCodeRef.current = null;
       setTransferProgress(null);
-      setStatus({ type: 'idle', message: '' });
+      setStatus({ type: 'loading', message: 'Generating code...' });
     }
     
     try {
-      const expiresAt = new Date(getSyncedNow() + expirationSeconds * 1000);
-      const isCollectionMode = shareMode === 'collection';
-
-      const clipData: any = {
-        content: savedText || (isCollectionMode ? 'Pro Max Collection Drop Box' : ''),
-        createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromDate(expiresAt),
-        authorUid: auth.currentUser?.uid || null,
-        tier: tier,
-        burnOnRead: burnOnRead,
-        viewCount: 0,
-        isCollection: isCollectionMode,
-        submissions: [],
-        submissionCount: 0,
-        uploadStatus: hasFiles ? 'uploading' : 'ready'
-      };
-
-      if (hasFiles) {
-        clipData.hasFile = true;
-        clipData.fileCount = filesToUpload.length;
-        clipData.totalSize = totalBytes;
-        clipData.fileName = filesToUpload[0].name;
-        clipData.fileType = filesToUpload[0].type || 'application/octet-stream';
-        clipData.fileSize = filesToUpload[0].size;
-        clipData.files = filesToUpload.map(f => ({
-          fileName: f.name,
-          fileType: f.type || 'application/octet-stream',
-          fileSize: f.size
-        }));
-      }
-
-      // Fast initial signaling write to Firestore (~80ms)
-      await setDoc(doc(db, 'clips', newCode), clipData);
-
-      // 2. Ultra-Fast File-to-Link Converter Engine (< 0.5s conversion time)
-      if (hasFiles) {
-        const convertFilesToLinksFast = async (files: File[], code: string): Promise<any[]> => {
+      const convertFilesToLinksFast = async (files: File[], code: string): Promise<any[]> => {
           // Engine 1: Direct-to-R2 Architecture via Presigned URLs (Completely Bypasses Node.js Server for File Bytes)
           try {
-            const r2UploadPromises = files.map(async (file) => {
+            const bytesPerFile = new Array(files.length).fill(0);
+            const r2UploadPromises = files.map(async (file, index) => {
               const res = await fetch('/api/get-upload-url', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1646,12 +1759,13 @@ export default function App() {
               // Direct PUT upload to Cloudflare R2 bucket with byte telemetry
               return new Promise<any>((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
-                let lastR2Update = 0;
+                activeXhrsRef.current.push(xhr);
 
                 xhr.upload.onprogress = (e) => {
                   if (e.lengthComputable) {
-                    const currentTransferred = e.loaded;
-                    const currentPercent = Math.min(99, Math.round((currentTransferred / (file.size || 1)) * 100));
+                    bytesPerFile[index] = e.loaded;
+                    const currentTransferred = bytesPerFile.reduce((a, b) => a + b, 0);
+                    const currentPercent = Math.min(99, Math.round((currentTransferred / (totalBytes || 1)) * 100));
 
                     setTransferProgress(prev => prev ? {
                       ...prev,
@@ -1659,20 +1773,12 @@ export default function App() {
                       percent: currentPercent,
                       status: 'uploading'
                     } : null);
-
-                    const now = Date.now();
-                    if (now - lastR2Update > 150) {
-                      lastR2Update = now;
-                      updateDoc(doc(db, 'clips', code), {
-                        uploadProgress: currentPercent,
-                        bytesTransferred: currentTransferred
-                      }).catch(() => {});
-                    }
                   }
                 };
 
                 xhr.onload = () => {
                   if (xhr.status >= 200 && xhr.status < 300) {
+                    bytesPerFile[index] = file.size;
                     resolve({
                       fileName: file.name,
                       fileType: file.type || 'application/octet-stream',
@@ -1684,9 +1790,10 @@ export default function App() {
                   }
                 };
 
+                xhr.onabort = () => reject({ code: 'storage/canceled' });
                 xhr.onerror = () => reject(new Error('R2 direct upload network error'));
                 xhr.ontimeout = () => reject(new Error('R2 direct upload timeout'));
-                xhr.timeout = 600000; // 10 minutes timeout for direct uploads
+                xhr.timeout = 3600000; // 60 minutes timeout for direct uploads up to 2GB
 
                 xhr.open('PUT', data.uploadUrl);
                 xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
@@ -1696,8 +1803,15 @@ export default function App() {
 
             const uploadedR2 = await Promise.all(r2UploadPromises);
             return uploadedR2;
-          } catch (r2Err) {
+          } catch (r2Err: any) {
+            if (r2Err?.code === 'storage/canceled' || uploadCancelledRef.current) {
+              throw { code: 'storage/canceled' };
+            }
             console.warn("Direct R2 presigned upload notice (falling back to server/storage):", r2Err);
+          }
+
+          if (uploadCancelledRef.current) {
+            throw { code: 'storage/canceled' };
           }
 
           // Engine 2: Local Express Server Asset Converter with XHR Byte Telemetry (/api/upload)
@@ -1706,10 +1820,10 @@ export default function App() {
             files.forEach(f => formData.append('files', f));
 
             const token = await auth.currentUser?.getIdToken();
-            let lastUpdate = 0;
 
             const uploaded = await new Promise<any[]>((resolve, reject) => {
               const xhr = new XMLHttpRequest();
+              activeXhrsRef.current.push(xhr);
               xhr.upload.onprogress = (e) => {
                 if (e.lengthComputable) {
                   const currentTransferred = e.loaded;
@@ -1721,15 +1835,6 @@ export default function App() {
                     percent: currentPercent,
                     status: 'uploading'
                   } : null);
-
-                  const now = Date.now();
-                  if (now - lastUpdate > 150) {
-                    lastUpdate = now;
-                    updateDoc(doc(db, 'clips', code), {
-                      uploadProgress: currentPercent,
-                      bytesTransferred: currentTransferred
-                    }).catch(() => {});
-                  }
                 }
               };
 
@@ -1757,6 +1862,7 @@ export default function App() {
                 }
               };
 
+              xhr.onabort = () => reject({ code: 'storage/canceled' });
               xhr.onerror = () => reject(new Error('XHR upload error'));
               xhr.ontimeout = () => reject(new Error('XHR upload timeout'));
               xhr.timeout = 300000; // 5 minute upload window for large files
@@ -1767,14 +1873,20 @@ export default function App() {
             });
 
             return uploaded;
-          } catch (err) {
+          } catch (err: any) {
+            if (err?.code === 'storage/canceled' || uploadCancelledRef.current) {
+              throw { code: 'storage/canceled' };
+            }
             console.warn("Express asset upload notice, attempting Firebase Storage fallback:", err);
+          }
+
+          if (uploadCancelledRef.current) {
+            throw { code: 'storage/canceled' };
           }
 
           // Fallback Engine: Firebase Storage Resumable Stream (with 15s timeout safeguard against iframe CORS hangs)
           const bytesPerFile = new Array(files.length).fill(0);
           activeUploadTasksRef.current = [];
-          let lastStorageUpdate = 0;
 
           return Promise.all(
             files.map((file, index) => {
@@ -1800,15 +1912,6 @@ export default function App() {
                       percent: currentPercent,
                       status: 'uploading'
                     } : null);
-
-                    const now = Date.now();
-                    if (now - lastStorageUpdate > 150) {
-                      lastStorageUpdate = now;
-                      updateDoc(doc(db, 'clips', code), {
-                        uploadProgress: currentPercent,
-                        bytesTransferred: currentTransferred
-                      }).catch(() => {});
-                    }
                   },
                   (err) => {
                     clearTimeout(storageTimeout);
@@ -1833,21 +1936,46 @@ export default function App() {
               });
             })
           );
-        };
+      };
 
-        // Execute ultra-fast file to link conversion
+      if (hasFiles) {
+        // Upload files first before writing the final Firestore clip and showing the code
         const uploadedFiles = await convertFilesToLinksFast(filesToUpload, newCode);
 
-        // Instantly write converted file links to Firebase Firestore
-        await updateDoc(doc(db, 'clips', newCode), {
+        if (uploadCancelledRef.current) {
+          throw { code: 'storage/canceled' };
+        }
+
+        const nowMs = getSyncedNow();
+        const effectiveExpiresMs = Math.max(
+          nowMs + expirationSeconds * 1000,
+          parsedDeadlineDate ? parsedDeadlineDate.getTime() + 60 * 60 * 1000 : 0
+        );
+        const readyExpiresAt = new Date(effectiveExpiresMs);
+        const clipData: any = {
+          content: savedText || (isCollectionMode ? 'Pro Max Collection Drop Box' : ''),
+          createdAt: serverTimestamp(),
+          expiresAt: Timestamp.fromDate(readyExpiresAt),
+          authorUid: auth.currentUser?.uid || null,
+          tier: tier,
+          burnOnRead: burnOnRead,
+          viewCount: 0,
+          isCollection: isCollectionMode,
+          ...(isCollectionMode && parsedDeadlineDate ? { submissionDeadline: Timestamp.fromDate(parsedDeadlineDate) } : {}),
+          submissions: [],
+          submissionCount: 0,
           uploadStatus: 'ready',
-          files: uploadedFiles,
           hasFile: true,
+          fileCount: uploadedFiles.length,
+          totalSize: totalBytes,
+          files: uploadedFiles,
           downloadUrl: uploadedFiles[0].downloadUrl,
           fileName: uploadedFiles[0].fileName,
           fileType: uploadedFiles[0].fileType,
           fileSize: uploadedFiles[0].fileSize
-        });
+        };
+
+        await setDoc(doc(db, 'clips', newCode), clipData);
 
         setTransferProgress(prev => prev ? {
           ...prev,
@@ -1856,9 +1984,51 @@ export default function App() {
           status: 'ready'
         } : null);
 
+        // Reveal the code only after the upload is 100% complete
+        setCode(newCode);
+        if (isPro && customCodeInput.trim()) addRecentCode(newCode);
+        setTimeLeft(Math.max(expirationSeconds, Math.ceil((effectiveExpiresMs - nowMs) / 1000)));
+        setSelectedFiles([]);
+        setManualText('');
+        setCustomCodeInput('');
+        setCollectionDeadline('');
+        pendingUploadCodeRef.current = null;
+        setStatus({ type: 'success', message: 'Upload complete! Your code is ready.' });
+      } else {
+        const nowMs = getSyncedNow();
+        const effectiveExpiresMs = Math.max(
+          nowMs + expirationSeconds * 1000,
+          parsedDeadlineDate ? parsedDeadlineDate.getTime() + 60 * 60 * 1000 : 0
+        );
+        const expiresAt = new Date(effectiveExpiresMs);
+        const clipData: any = {
+          content: savedText || (isCollectionMode ? 'Pro Max Collection Drop Box' : ''),
+          createdAt: serverTimestamp(),
+          expiresAt: Timestamp.fromDate(expiresAt),
+          authorUid: auth.currentUser?.uid || null,
+          tier: tier,
+          burnOnRead: burnOnRead,
+          viewCount: 0,
+          isCollection: isCollectionMode,
+          ...(isCollectionMode && parsedDeadlineDate ? { submissionDeadline: Timestamp.fromDate(parsedDeadlineDate) } : {}),
+          submissions: [],
+          submissionCount: 0,
+          uploadStatus: 'ready'
+        };
+
+        await setDoc(doc(db, 'clips', newCode), clipData);
+
+        setCode(newCode);
+        if (isPro && customCodeInput.trim()) addRecentCode(newCode);
+        setTimeLeft(Math.max(expirationSeconds, Math.ceil((effectiveExpiresMs - nowMs) / 1000)));
+        setSelectedFiles([]);
+        setManualText('');
+        setCustomCodeInput('');
+        setCollectionDeadline('');
         setStatus({ type: 'idle', message: '' });
       }
     } catch (err: any) {
+      pendingUploadCodeRef.current = null;
       if (err?.code === 'storage/canceled') {
         setTransferProgress(prev => prev ? { ...prev, status: 'cancelled' } : null);
         setStatus({ type: 'error', message: 'Upload cancelled.' });
@@ -2066,6 +2236,12 @@ export default function App() {
   };
 
   const handleSubmitContribution = async () => {
+    const deadlineMillis = getDeadlineMillis(retrievedClip?.submissionDeadline);
+    if (deadlineMillis && getSyncedNow() > deadlineMillis) {
+      setStatus({ type: 'error', message: 'Submissions are closed. The deadline for this collection has passed.' });
+      return;
+    }
+
     if (!contributorName.trim()) {
       setStatus({ type: 'error', message: 'Please enter your name or student ID.' });
       return;
@@ -2082,9 +2258,10 @@ export default function App() {
     }
 
     const totalBytes = contributorFiles.reduce((sum, f) => sum + f.size, 0);
-    const maxAllowedSize = 50 * 1024 * 1024;
-    if (totalBytes > maxAllowedSize) {
-      setStatus({ type: 'error', message: `Submission too large (${(totalBytes / (1024 * 1024)).toFixed(1)}MB total). Max 50MB allowed.` });
+    const maxCollectionSize = retrievedClip?.tier === 'promax' ? 2 * 1024 * 1024 * 1024 : 500 * 1024 * 1024;
+    const maxCollectionLabel = retrievedClip?.tier === 'promax' ? '2 GB' : '500 MB';
+    if (totalBytes > maxCollectionSize) {
+      setStatus({ type: 'error', message: `Submission too large (${formatBytes(totalBytes)} total). Max ${maxCollectionLabel} allowed.` });
       return;
     }
 
@@ -2101,59 +2278,124 @@ export default function App() {
     try {
       let uploadedFiles: any[] = [];
 
-      // Primary Engine: Fast XHR upload via Express /api/upload with live byte telemetry
+      // Engine 1: Direct-to-R2 via Presigned URLs (supports large submissions up to 2GB)
       try {
-        const formData = new FormData();
-        contributorFiles.forEach(f => formData.append('files', f));
-        const token = await auth.currentUser?.getIdToken();
-
-        uploadedFiles = await new Promise<any[]>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              const currentTransferred = e.loaded;
-              const currentPercent = Math.min(99, Math.round((currentTransferred / (totalBytes || e.total || 1)) * 100));
-              setTransferProgress(prev => prev ? {
-                ...prev,
-                bytesTransferred: currentTransferred,
-                percent: currentPercent,
-                status: 'uploading'
-              } : null);
+        const bytesPerFile = new Array(contributorFiles.length).fill(0);
+        uploadedFiles = await Promise.all(
+          contributorFiles.map(async (file, index) => {
+            const res = await fetch('/api/get-upload-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fileName: file.name,
+                fileType: file.type || 'application/octet-stream',
+                fileSize: file.size
+              })
+            });
+            if (!res.ok) {
+              throw new Error(`get-upload-url returned ${res.status}`);
             }
-          };
+            const data = await res.json();
+            if (!data.directR2 || !data.uploadUrl) {
+              throw new Error('R2 direct upload not configured');
+            }
 
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                const data = JSON.parse(xhr.responseText);
-                if (data.files && data.files.length > 0) {
-                  resolve(data.files.map((f: any) => ({
-                    fileName: f.fileName,
-                    fileType: f.fileType,
-                    fileSize: f.fileSize,
-                    downloadUrl: f.downloadUrl.startsWith('/') ? `${window.location.origin}${f.downloadUrl}` : f.downloadUrl
-                  })));
-                } else {
-                  reject(new Error("No files returned from server"));
+            return new Promise<any>((resolve, reject) => {
+              const xhr = new XMLHttpRequest();
+              xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                  bytesPerFile[index] = e.loaded;
+                  const currentTransferred = bytesPerFile.reduce((a, b) => a + b, 0);
+                  const currentPercent = Math.min(99, Math.round((currentTransferred / (totalBytes || 1)) * 100));
+                  setTransferProgress(prev => prev ? {
+                    ...prev,
+                    bytesTransferred: currentTransferred,
+                    percent: currentPercent,
+                    status: 'uploading'
+                  } : null);
                 }
-              } catch (err) {
-                reject(err);
+              };
+              xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  bytesPerFile[index] = file.size;
+                  resolve({
+                    fileName: file.name,
+                    fileType: file.type || 'application/octet-stream',
+                    fileSize: file.size,
+                    downloadUrl: data.publicUrl
+                  });
+                } else {
+                  reject(new Error(`Direct R2 upload failed HTTP ${xhr.status}`));
+                }
+              };
+              xhr.onerror = () => reject(new Error('R2 direct upload network error'));
+              xhr.ontimeout = () => reject(new Error('R2 direct upload timeout'));
+              xhr.timeout = 3600000;
+              xhr.open('PUT', data.uploadUrl);
+              xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+              xhr.send(file);
+            });
+          })
+        );
+      } catch (r2Err) {
+        console.warn("Contribution R2 upload notice, trying server fallback:", r2Err);
+      }
+
+      // Fallback Engine 2: Fast XHR upload via Express /api/upload with live byte telemetry
+      if (uploadedFiles.length === 0) {
+        try {
+          const formData = new FormData();
+          contributorFiles.forEach(f => formData.append('files', f));
+          const token = await auth.currentUser?.getIdToken();
+
+          uploadedFiles = await new Promise<any[]>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) {
+                const currentTransferred = e.loaded;
+                const currentPercent = Math.min(99, Math.round((currentTransferred / (totalBytes || e.total || 1)) * 100));
+                setTransferProgress(prev => prev ? {
+                  ...prev,
+                  bytesTransferred: currentTransferred,
+                  percent: currentPercent,
+                  status: 'uploading'
+                } : null);
               }
-            } else {
-              reject(new Error(`Server upload HTTP ${xhr.status}`));
-            }
-          };
+            };
 
-          xhr.onerror = () => reject(new Error('XHR upload error'));
-          xhr.ontimeout = () => reject(new Error('XHR upload timeout'));
-          xhr.timeout = 300000; // 5 minute upload window for large files
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  const data = JSON.parse(xhr.responseText);
+                  if (data.files && data.files.length > 0) {
+                    resolve(data.files.map((f: any) => ({
+                      fileName: f.fileName,
+                      fileType: f.fileType,
+                      fileSize: f.fileSize,
+                      downloadUrl: f.downloadUrl.startsWith('/') ? `${window.location.origin}${f.downloadUrl}` : f.downloadUrl
+                    })));
+                  } else {
+                    reject(new Error("No files returned from server"));
+                  }
+                } catch (err) {
+                  reject(err);
+                }
+              } else {
+                reject(new Error(`Server upload HTTP ${xhr.status}`));
+              }
+            };
 
-          xhr.open('POST', '/api/upload');
-          if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-          xhr.send(formData);
-        });
-      } catch (err) {
-        console.warn("Contribution Express upload notice, using Firebase Storage fallback:", err);
+            xhr.onerror = () => reject(new Error('XHR upload error'));
+            xhr.ontimeout = () => reject(new Error('XHR upload timeout'));
+            xhr.timeout = 300000; // 5 minute upload window for large files
+
+            xhr.open('POST', '/api/upload');
+            if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            xhr.send(formData);
+          });
+        } catch (err) {
+          console.warn("Contribution Express upload notice, using Firebase Storage fallback:", err);
+        }
       }
 
       // Fallback Engine: Firebase Storage Resumable Stream (with 15s timeout safeguard against iframe CORS hangs)
@@ -2266,6 +2508,13 @@ export default function App() {
       handleFirestoreError(err, OperationType.UPDATE, `clips/${clipId}`);
     }
   };
+
+  const collectionDeadlineMillis = getDeadlineMillis(retrievedClip?.submissionDeadline);
+  const isCollectionClosed = Boolean(
+    retrievedClip?.isCollection &&
+    collectionDeadlineMillis &&
+    (deadlineNowTick + serverOffset) > collectionDeadlineMillis
+  );
 
   return (
     <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans selection:bg-[#141414] selection:text-[#E4E3E0]">
@@ -2557,7 +2806,46 @@ export default function App() {
 
           {/* SEND BOX */}
           <div className={`SendBox bg-white border border-[#141414] p-5 sm:p-6 rounded-none sm:rounded-md shadow-none sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] relative overflow-hidden ${activeTab === 'share' ? 'block' : 'hidden sm:block'}`}>
-            {!code ? (
+            {!code && transferProgress?.status === 'uploading' ? (
+              <div className="py-10 px-2 sm:px-4 space-y-6 text-center">
+                <div className="w-12 h-12 mx-auto rounded-full border-4 border-[#141414]/15 border-t-emerald-500 animate-spin" />
+                <div className="space-y-1.5">
+                  <h2 className="text-2xl sm:text-3xl font-serif italic font-normal text-[#141414]">
+                    Uploading files...
+                  </h2>
+                  <p className="text-xs text-neutral-600 font-mono truncate max-w-xs mx-auto">
+                    {transferProgress.fileName}
+                  </p>
+                </div>
+
+                <div className="bg-[#F4F3F0] border border-[#141414]/20 p-4 rounded-sm space-y-2.5 text-left">
+                  <div className="flex items-center justify-between gap-2 text-xs font-mono font-bold">
+                    <span className="text-[#141414]">Preparing share code</span>
+                    <span className="tabular-nums text-emerald-700">{transferProgress.percent}%</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-[#141414]/10 rounded-none overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 transition-all duration-200 ease-out"
+                      style={{ width: `${transferProgress.percent}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-neutral-600">
+                    <span>
+                      {formatBytes(transferProgress.bytesTransferred)} / {formatBytes(transferProgress.totalBytes)}
+                    </span>
+                    <span>Code appears when complete</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleCancelUpload()}
+                  className="text-xs uppercase tracking-wider font-bold border-b border-red-600 pb-0.5 text-red-600 hover:text-red-800 transition-colors cursor-pointer"
+                >
+                  Cancel Upload
+                </button>
+              </div>
+            ) : !code ? (
               <>
                 {/* Desktop Initial Clickzone (when not expanded on desktop) */}
                 <div className="hidden sm:block">
@@ -2699,8 +2987,8 @@ export default function App() {
                           <div className="space-y-2">
                             <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider text-neutral-800 font-mono">
                               <span>Attached Files ({selectedFiles.length})</span>
-                              <span className={`text-xs ${selectedFiles.reduce((acc, f) => acc + f.size, 0) > (isProMax ? 50 : 10) * 1024 * 1024 ? 'text-red-600 font-bold' : 'text-neutral-600'}`}>
-                                {(selectedFiles.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024)).toFixed(2)} MB / {isProMax ? 50 : 10} MB
+                              <span className={`text-xs tabular-nums ${selectedFiles.reduce((acc, f) => acc + f.size, 0) > getMaxFileSizeBytes() ? 'text-red-600 font-bold' : 'text-neutral-600'}`}>
+                                {formatBytes(selectedFiles.reduce((acc, f) => acc + f.size, 0))} / {getMaxFileSizeLabel()}
                               </span>
                             </div>
 
@@ -2745,8 +3033,8 @@ export default function App() {
                             <p className="text-xs font-bold uppercase tracking-wider text-[#141414] font-mono">
                               {selectedFiles.length > 0 ? '+ Add More Files' : 'Select files from device'}
                             </p>
-                            <p className="text-[10px] text-neutral-500 font-mono">
-                              MAX {isProMax ? '50MB' : '10MB'} • ALL FILE TYPES
+                            <p className="text-[10px] text-neutral-500 font-mono tabular-nums">
+                              MAX {getMaxFileSizeLabel().toUpperCase()} • ALL FILE TYPES
                             </p>
                           </div>
                         </label>
@@ -2789,6 +3077,39 @@ export default function App() {
                           onChange={(e) => setManualText(e.target.value)}
                           className="w-full p-3 border border-[#141414] rounded-sm font-mono text-xs bg-white"
                         />
+                        <div className="space-y-1.5 pt-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <label
+                              htmlFor="collection-deadline-input"
+                              className="text-[10px] uppercase tracking-wider font-bold text-neutral-700 font-mono flex items-center gap-1.5"
+                            >
+                              <Calendar className="w-3.5 h-3.5 text-blue-700" />
+                              <span>Submission Deadline (Optional)</span>
+                            </label>
+                            {collectionDeadline && (
+                              <button
+                                type="button"
+                                onClick={() => setCollectionDeadline('')}
+                                className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 hover:text-[#141414] underline cursor-pointer"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            id="collection-deadline-input"
+                            type="datetime-local"
+                            min={toLocalDateTimeInputValue(new Date())}
+                            value={collectionDeadline}
+                            onChange={(e) => setCollectionDeadline(e.target.value)}
+                            className="w-full p-2.5 border border-[#141414] rounded-sm font-mono text-xs bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-[#141414]"
+                          />
+                          <p className="text-[10px] font-mono text-neutral-600">
+                            {collectionDeadline
+                              ? `Auto-closes submissions on ${new Date(collectionDeadline).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`
+                              : 'Leave blank to keep open until clip expiration.'}
+                          </p>
+                        </div>
                       </div>
                     )}
 
@@ -2848,7 +3169,11 @@ export default function App() {
                   {/* Expiration text matching screenshot */}
                   <div className="flex items-center justify-center gap-1.5 text-xs font-mono text-neutral-500 pt-1">
                     <Clock className="w-3.5 h-3.5 text-neutral-500" />
-                    <span>Code expires in {formatTime(isPro ? expirationOption : (selectedFiles.length > 0 || shareMode === 'file' ? FILE_EXPIRATION_SECONDS : EXPIRATION_SECONDS))}</span>
+                    <span>
+                      {shareMode === 'collection' && collectionDeadline
+                        ? `Closes ${new Date(collectionDeadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}`
+                        : `Code expires in ${formatTime(isPro ? expirationOption : (selectedFiles.length > 0 || shareMode === 'file' ? FILE_EXPIRATION_SECONDS : EXPIRATION_SECONDS))}`}
+                    </span>
                   </div>
 
                   {/* Generate Code button matching screenshot */}
@@ -2857,8 +3182,17 @@ export default function App() {
                     disabled={status.type === 'loading' || (!manualText.trim() && selectedFiles.length === 0)}
                     className="w-full bg-[#737373] hover:bg-[#525252] text-white py-4 rounded-sm font-mono font-bold uppercase tracking-[0.15em] text-sm transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 cursor-pointer"
                   >
-                    {status.type === 'loading' ? <RefreshCw className="animate-spin w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-                    <span>GENERATE CODE</span>
+                    {status.type === 'loading' && !status.message.includes('Retrieving') ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+                        <span>{transferProgress?.status === 'uploading' ? `UPLOADING (${transferProgress.percent}%)` : 'GENERATING...'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Share2 className="w-4 h-4" />
+                        <span>GENERATE CODE</span>
+                      </>
+                    )}
                   </button>
 
                   {/* Desktop close options button */}
@@ -2915,6 +3249,40 @@ export default function App() {
                   </div>
                 </div>
                 
+                {transferProgress && transferProgress.status === 'uploading' && (
+                  <div className="bg-[#F4F3F0] border border-[#141414]/20 p-4 rounded-sm space-y-2.5 text-left">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-4 h-4 border-2 border-[#141414]/15 border-t-emerald-600 rounded-full animate-spin shrink-0" />
+                        <span className="text-xs font-mono font-bold text-[#141414] truncate">
+                          Code ready · Uploading {transferProgress.fileName}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono font-bold tabular-nums text-emerald-700 shrink-0">
+                        {transferProgress.percent}%
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-[#141414]/10 rounded-none overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 transition-all duration-200 ease-out"
+                        style={{ width: `${transferProgress.percent}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-neutral-600">
+                      <span>
+                        {formatBytes(transferProgress.bytesTransferred)} / {formatBytes(transferProgress.totalBytes)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCancelUpload(code)}
+                        className="text-red-600 hover:text-red-800 font-semibold underline cursor-pointer"
+                      >
+                        Cancel Upload
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-col items-center gap-4">
                   <div className="flex items-center justify-center gap-2 text-neutral-700">
                     <Clock className="w-4 h-4 text-neutral-600" />
@@ -2983,8 +3351,11 @@ export default function App() {
                       disabled={status.type === 'loading' || inputCode.length < 3}
                       className="IconButton receive-button regular w-full bg-[#737373] hover:bg-[#525252] text-white py-4 rounded-sm font-mono font-bold uppercase tracking-[0.15em] text-sm transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 cursor-pointer shadow-none"
                     >
-                      {status.type === 'loading' ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      {status.type === 'loading' && status.message.includes('Retrieving') ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+                          <span>RETRIEVING...</span>
+                        </>
                       ) : (
                         <>
                           <Download className="w-4 h-4" />
@@ -3038,7 +3409,7 @@ export default function App() {
                     </div>
                     <div className="flex items-center justify-between text-xs sm:text-sm text-neutral-700 px-1 font-medium">
                       <span>Total {retrievedClip.files?.length || 1} files</span>
-                      <span>
+                      <span className="tabular-nums">
                         {(!retrievalProgress || retrievalProgress.loadedBytes === 0) ? (
                           <strong className="text-red-600 font-bold">0 B</strong>
                         ) : (
@@ -3047,11 +3418,11 @@ export default function App() {
                           </strong>
                         )}
                         {" / "}
-                        {(
-                          (retrievedClip.files
+                        {formatBytes(
+                          retrievedClip.files
                             ? retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0)
-                            : (retrievedClip.fileSize || 0)) / (1024 * 1024)
-                        ).toFixed(2)} MB
+                            : (retrievedClip.fileSize || 0)
+                        )}
                       </span>
                     </div>
                   </div>
@@ -3088,19 +3459,64 @@ export default function App() {
                     <div className="p-4 sm:p-6 bg-white space-y-6">
                       {retrievedClip.isCollection ? (
                         <div className="space-y-6 text-left">
-                          <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-sm space-y-2">
-                            <div className="flex items-center justify-between">
+                          <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-sm space-y-2.5">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
                               <span className="text-xs font-bold uppercase tracking-wider text-blue-700 font-mono">Pro Max Collection Box</span>
-                              <span className="text-xs font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm font-bold">
+                              <span className="text-xs font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm font-bold tabular-nums">
                                 {retrievedClip.submissions?.length || 0} Submissions
                               </span>
                             </div>
                             <h3 className="text-sm font-bold text-[#141414]">{retrievedClip.content}</h3>
+                            {collectionDeadlineMillis && (
+                              <div className={`flex items-center justify-between gap-2 pt-2 border-t border-blue-200 text-[11px] font-mono ${isCollectionClosed ? 'text-red-700 font-bold' : 'text-neutral-700'}`}>
+                                <span className="flex items-center gap-1.5">
+                                  <Calendar className="w-3.5 h-3.5 shrink-0" />
+                                  <span>
+                                    {isCollectionClosed ? 'Closed on ' : 'Deadline: '}
+                                    <span className="tabular-nums">
+                                      {new Date(collectionDeadlineMillis).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                    </span>
+                                  </span>
+                                </span>
+                                <span className={`uppercase tracking-wider text-[10px] font-bold px-2 py-0.5 rounded-none border ${isCollectionClosed ? 'bg-red-50 text-red-700 border-red-300' : 'bg-emerald-50 text-emerald-800 border-emerald-300'}`}>
+                                  {isCollectionClosed ? 'Closed' : 'Open'}
+                                </span>
+                              </div>
+                            )}
                           </div>
 
                           {user && user.uid === retrievedClip.authorUid ? (
                             <div className="space-y-4">
-                              <div className="text-xs font-bold uppercase tracking-wider text-neutral-800">Incoming Submissions ({retrievedClip.submissions?.length || 0})</div>
+                              <div className="flex items-center justify-between gap-3 flex-wrap">
+                                <div className="text-xs font-bold uppercase tracking-wider text-neutral-800">
+                                  Incoming Submissions ({retrievedClip.submissions?.length || 0})
+                                </div>
+                                {retrievedClip.submissions && retrievedClip.submissions.length > 0 && (() => {
+                                  const allEntries = retrievedClip.submissions.flatMap((sub: any, sIdx: number) =>
+                                    (sub.files || []).map((file: any) => ({
+                                      url: file.downloadUrl || file.url,
+                                      fileName: file.fileName || 'file',
+                                      folder: sub.contributorName || `Submission_${sIdx + 1}`
+                                    }))
+                                  );
+                                  if (allEntries.length === 0) return null;
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled={isZipping}
+                                      onClick={() => handleDownloadAllAsZip(allEntries, `collection-${retrievedClip.id}.zip`)}
+                                      className="bg-[#141414] text-[#E4E3E0] px-3.5 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                                    >
+                                      {isZipping ? (
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                      ) : (
+                                        <Archive className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                      )}
+                                      <span>{isZipping ? 'Zipping...' : `Download All as ZIP (${allEntries.length})`}</span>
+                                    </button>
+                                  );
+                                })()}
+                              </div>
                               {(!retrievedClip.submissions || retrievedClip.submissions.length === 0) ? (
                                 <div className="p-6 text-center border border-dashed border-[#141414]/20 rounded-sm text-neutral-600 text-xs font-mono">
                                   No submissions yet. Share your collection code with students or teammates!
@@ -3111,7 +3527,7 @@ export default function App() {
                                     <div key={sIdx} className="bg-white border-2 border-[#141414] p-4 rounded-sm shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-2">
                                       <div className="flex justify-between items-center">
                                         <span className="text-xs font-bold font-mono text-blue-700">{sub.contributorName}</span>
-                                        <span className="text-[10px] text-neutral-600 font-mono font-medium">{new Date(sub.submittedAt).toLocaleTimeString()}</span>
+                                        <span className="text-[10px] text-neutral-600 font-mono font-medium tabular-nums">{new Date(sub.submittedAt).toLocaleTimeString()}</span>
                                       </div>
                                       <div className="space-y-2 pt-1">
                                         {sub.files.map((file: any, fIdx: number) => (
@@ -3131,6 +3547,22 @@ export default function App() {
                                   ))}
                                 </div>
                               )}
+                            </div>
+                          ) : isCollectionClosed ? (
+                            <div className="p-6 bg-[#F4F3F0] border-2 border-[#141414] rounded-sm text-center space-y-2">
+                              <div className="w-10 h-10 bg-[#141414] text-white mx-auto rounded-none flex items-center justify-center">
+                                <Lock className="w-5 h-5 text-red-400" />
+                              </div>
+                              <h4 className="text-sm font-bold uppercase tracking-wider font-mono text-[#141414]">
+                                Submissions Closed
+                              </h4>
+                              <p className="text-xs font-mono text-neutral-600 max-w-sm mx-auto">
+                                The deadline for this collection box passed on{' '}
+                                <span className="font-bold text-[#141414] tabular-nums">
+                                  {collectionDeadlineMillis ? new Date(collectionDeadlineMillis).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : ''}
+                                </span>
+                                . New submissions are no longer accepted.
+                              </p>
                             </div>
                           ) : (
                             <div className="space-y-4 bg-[#F9F9F8] border-2 border-[#141414] p-5 rounded-sm shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
@@ -3165,7 +3597,9 @@ export default function App() {
                                   <div className="flex flex-col items-center gap-2">
                                     <Share2 className="w-6 h-6 text-neutral-600" />
                                     <span className="text-xs font-bold uppercase tracking-wider text-[#141414]">Click to browse or drop files</span>
-                                    <span className="text-[10px] text-neutral-600 font-mono">Assignments, reports, media</span>
+                                    <span className="text-[10px] text-neutral-600 font-mono">
+                                      Assignments, reports, media • MAX {retrievedClip?.tier === 'promax' ? '2 GB' : '500 MB'}
+                                    </span>
                                   </div>
                                 </label>
 
@@ -3174,7 +3608,7 @@ export default function App() {
                                     {contributorFiles.map((f, i) => (
                                       <div key={i} className="flex items-center justify-between bg-white p-2 border border-[#141414]/20 rounded-sm text-xs font-mono">
                                         <span className="truncate pr-2 text-[#141414]">{f.name}</span>
-                                        <span className="text-neutral-600 text-xs font-medium">{(f.size / 1024).toFixed(1)} KB</span>
+                                        <span className="text-neutral-600 text-xs font-medium tabular-nums shrink-0">{formatBytes(f.size)}</span>
                                       </div>
                                     ))}
                                   </div>
@@ -3196,11 +3630,34 @@ export default function App() {
                         <div className="space-y-4">
                           {retrievedClip.files && retrievedClip.files.length > 0 && (
                             <div className="space-y-3">
-                              <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider text-neutral-800">
-                                <span>Attached Files ({retrievedClip.files.length})</span>
-                                <span className="text-xs font-mono text-neutral-600 font-medium">
-                                  {(retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0) / (1024 * 1024)).toFixed(2)} MB
-                                </span>
+                              <div className="flex justify-between items-center gap-2 flex-wrap text-xs font-bold uppercase tracking-wider text-neutral-800">
+                                <div className="flex items-center gap-2">
+                                  <span>Attached Files ({retrievedClip.files.length})</span>
+                                  <span className="text-xs font-mono text-neutral-600 font-medium tabular-nums">
+                                    ({formatBytes(retrievedClip.files.reduce((acc: number, f: any) => acc + (f.fileSize || 0), 0))})
+                                  </span>
+                                </div>
+                                {retrievedClip.files.length > 1 && (
+                                  <button
+                                    type="button"
+                                    disabled={isZipping}
+                                    onClick={() => handleDownloadAllAsZip(
+                                      retrievedClip.files.map((f: any) => ({
+                                        url: f.downloadUrl || f.url || retrievedClip.downloadUrl,
+                                        fileName: f.fileName || 'file'
+                                      })),
+                                      `sendarro-${retrievedClip.id}.zip`
+                                    )}
+                                    className="bg-[#141414] text-[#E4E3E0] px-3.5 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                                  >
+                                    {isZipping ? (
+                                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                    ) : (
+                                      <Archive className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                    )}
+                                    <span>{isZipping ? 'Zipping...' : 'Download All as ZIP'}</span>
+                                  </button>
+                                )}
                               </div>
 
                               <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
@@ -3222,8 +3679,8 @@ export default function App() {
                                           <div className="text-xs font-bold uppercase tracking-wider text-blue-700 truncate block">
                                             {file.fileName}
                                           </div>
-                                          <div className="text-[10px] text-blue-900/80 font-mono font-medium">
-                                            {(file.fileSize / (1024 * 1024)).toFixed(2)} MB • {file.fileType?.split('/').pop()?.toUpperCase()}
+                                          <div className="text-[10px] text-blue-900/80 font-mono font-medium tabular-nums">
+                                            {formatBytes(file.fileSize || 0)} • {file.fileType?.split('/').pop()?.toUpperCase()}
                                           </div>
                                         </div>
                                       </div>
@@ -3258,8 +3715,8 @@ export default function App() {
                                   <div className="text-xs font-bold uppercase tracking-wider text-blue-700 truncate block mb-1">
                                     {retrievedClip.fileName}
                                   </div>
-                                  <div className="text-xs text-blue-900 font-mono font-medium bg-blue-100/70 inline-block px-2.5 py-0.5 rounded-sm">
-                                    {(retrievedClip.fileSize / (1024 * 1024)).toFixed(2)} MB • {retrievedClip.fileType?.split('/').pop()?.toUpperCase()}
+                                  <div className="text-xs text-blue-900 font-mono font-medium bg-blue-100/70 inline-block px-2.5 py-0.5 rounded-sm tabular-nums">
+                                    {formatBytes(retrievedClip.fileSize || 0)} • {retrievedClip.fileType?.split('/').pop()?.toUpperCase()}
                                   </div>
                                 </div>
                               </div>
@@ -3329,36 +3786,84 @@ export default function App() {
                 initial={{ opacity: 0, y: 50, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
-                className={`fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 p-4 border-2 rounded-none shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] z-[100] cursor-grab active:cursor-grabbing ${
+                className={`fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 border-2 rounded-none shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] z-[100] cursor-grab active:cursor-grabbing overflow-hidden ${
                   status.type === 'success' ? 'bg-white border-[#141414] text-[#141414]' : 
                   status.type === 'loading' ? 'bg-white border-[#141414] text-[#141414]' : 'bg-[#141414] border-red-500 text-white'
                 }`}
               >
-                <div className="flex items-start gap-3 w-full">
-                  {status.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-500" /> : 
-                   status.type === 'loading' ? <RefreshCw className="w-5 h-5 shrink-0 text-neutral-400 animate-spin" /> : 
-                   <AlertCircle className="w-5 h-5 shrink-0 text-red-500" />}
-                  <span className="flex-1 text-xs font-bold uppercase tracking-widest">{status.message.replace('[Upgrade Now]', '')}</span>
-                  <button onClick={() => setStatus({ type: 'idle', message: '' })} className={`${status.type === 'loading' ? 'text-neutral-400' : 'text-[#141414]/50'} hover:text-[#141414] cursor-pointer`}>
+                <div className="p-4 flex items-start gap-3 w-full">
+                  {status.type === 'success' ? (
+                    <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-500 mt-0.5" />
+                  ) : status.type === 'loading' ? (
+                    <span
+                      aria-label="Loading"
+                      className="w-5 h-5 shrink-0 mt-0.5 border-2 border-[#141414]/15 border-t-emerald-600 rounded-full animate-spin"
+                    />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 shrink-0 text-red-500 mt-0.5" />
+                  )}
+
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold uppercase tracking-widest leading-snug">
+                        {status.message.replace('[Upgrade Now]', '')}
+                      </span>
+                      {status.type === 'loading' && transferProgress?.status === 'uploading' && (
+                        <span className="text-xs font-mono font-bold tabular-nums text-emerald-700 shrink-0">
+                          {transferProgress.percent}%
+                        </span>
+                      )}
+                    </div>
+
+                    {status.type === 'loading' && transferProgress?.status === 'uploading' && (
+                      <div className="text-[11px] font-mono tabular-nums text-neutral-500">
+                        {formatBytes(transferProgress.bytesTransferred)} / {formatBytes(transferProgress.totalBytes)}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => setStatus({ type: 'idle', message: '' })}
+                    className={`${status.type === 'error' ? 'text-neutral-400 hover:text-white' : 'text-neutral-400 hover:text-[#141414]'} cursor-pointer shrink-0`}
+                    aria-label="Dismiss notification"
+                  >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-                  {status.type === 'error' && status.message.includes('new tab') && (
+
+                {status.type === 'loading' && (
+                  <div className="w-full h-1 bg-[#141414]/10 overflow-hidden">
+                    {transferProgress?.status === 'uploading' ? (
+                      <div
+                        className="h-full bg-emerald-500 transition-all duration-200 ease-out"
+                        style={{ width: `${transferProgress.percent}%` }}
+                      />
+                    ) : (
+                      <div className="h-full bg-emerald-500 animate-indeterminate-loader" />
+                    )}
+                  </div>
+                )}
+
+                {status.type === 'error' && status.message.includes('new tab') && (
+                  <div className="px-4 pb-4">
                     <button 
                       onClick={() => window.open(window.location.href, '_blank')}
-                      className="bg-red-800 text-white px-3 py-1.5 rounded-sm hover:bg-red-700 transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 cursor-pointer"
+                      className="bg-red-800 text-white px-3 py-1.5 rounded-sm hover:bg-red-700 transition-colors shrink-0 w-full sm:w-auto cursor-pointer text-xs font-bold uppercase tracking-wider"
                     >
                       Open in New Tab
                     </button>
-                  )}
-                  {status.message.includes('[Upgrade Now]') && (
+                  </div>
+                )}
+                {status.message.includes('[Upgrade Now]') && (
+                  <div className="px-4 pb-4">
                     <button 
                       onClick={() => setCurrentView('pricing')}
-                      className="bg-red-800 text-white px-3 py-1.5 rounded-sm hover:bg-red-700 transition-colors shrink-0 w-full sm:w-auto mt-2 sm:mt-0 cursor-pointer"
+                      className="bg-red-800 text-white px-3 py-1.5 rounded-sm hover:bg-red-700 transition-colors shrink-0 w-full sm:w-auto cursor-pointer text-xs font-bold uppercase tracking-wider"
                     >
                       Upgrade Now
                     </button>
-                  )}
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

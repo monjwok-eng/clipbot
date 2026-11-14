@@ -39,6 +39,7 @@ service cloud.firestore {
              data.content is string && data.content.size() <= 100000 &&
              data.createdAt is timestamp &&
              data.expiresAt is timestamp &&
+             (data.get('submissionDeadline', null) == null || data.submissionDeadline is timestamp) &&
              (data.authorUid == null || data.authorUid is string);
     }
 
@@ -75,8 +76,9 @@ service cloud.firestore {
       allow get: if true;
       allow update: if (isDocOwner() && isValidClip(request.resource.data)) ||
                       (resource.data.get('uploadStatus', '') == 'uploading' &&
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uploadStatus', 'files', 'hasFile', 'downloadUrl', 'fileName', 'fileType', 'fileSize'])) ||
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uploadStatus', 'files', 'hasFile', 'downloadUrl', 'fileName', 'fileType', 'fileSize', 'expiresAt', 'uploadProgress', 'bytesTransferred'])) ||
                       (resource.data.get('isCollection', false) == true &&
+                       (resource.data.get('submissionDeadline', null) == null || (resource.data.submissionDeadline is timestamp && request.time <= resource.data.submissionDeadline)) &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['submissions', 'submissionCount']) &&
                        request.resource.data.submissions is list) ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['expiresAt']) && 

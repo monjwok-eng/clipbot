@@ -1,10 +1,7 @@
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth } from '../firebase';
+import { getDriveAccessToken as getCachedServiceToken, connectGoogleDrive } from '../services/googleDrive';
 
 declare const google: any;
 declare const gapi: any;
-
-let cachedDriveToken: string | null = null;
 
 // Load the Google API script dynamically
 export function loadGapiScript(): Promise<void> {
@@ -26,25 +23,13 @@ export function loadGapiScript(): Promise<void> {
   });
 }
 
-// Get or request Google OAuth access token with Drive scopes
+// Get or request Google OAuth access token with Drive scopes (decoupled from Firebase Auth)
 export async function getDriveAccessToken(): Promise<string> {
-  if (cachedDriveToken) {
-    return cachedDriveToken;
+  const existing = getCachedServiceToken();
+  if (existing) {
+    return existing;
   }
-
-  const provider = new GoogleAuthProvider();
-  provider.addScope('https://www.googleapis.com/auth/drive.file');
-  provider.addScope('https://www.googleapis.com/auth/drive.readonly');
-
-  const result = await signInWithPopup(auth, provider);
-  const credential = GoogleAuthProvider.credentialFromResult(result);
-  
-  if (!credential?.accessToken) {
-    throw new Error('Could not obtain Google Drive access token');
-  }
-
-  cachedDriveToken = credential.accessToken;
-  return cachedDriveToken;
+  return connectGoogleDrive(false);
 }
 
 export interface PickedDriveFile {

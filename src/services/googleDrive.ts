@@ -1,15 +1,23 @@
-import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
+import firebaseConfig from '../../firebase-applet-config.json';
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
 
 export const DRIVE_SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/drive.file'
 ];
 
-// In-memory cache for the OAuth access token
+// In-memory cache for the Drive-only OAuth access token (never stored in localStorage)
 let cachedAccessToken: string | null = null;
+let gsiLoadPromise: Promise<void> | null = null;
 
-// Clear cached token if user logs out
+// Clear cached Drive token if the main Sendarro user signs out
 onAuthStateChanged(auth, (user) => {
   if (!user) {
     cachedAccessToken = null;
@@ -28,33 +36,108 @@ export const clearDriveAccessToken = (): void => {
   cachedAccessToken = null;
 };
 
-export const connectGoogleDrive = async (forceAccountSelect = false): Promise<string> => {
-  const provider = new GoogleAuthProvider();
-  DRIVE_SCOPES.forEach((scope) => provider.addScope(scope));
-
-  if (forceAccountSelect) {
-    provider.setCustomParameters({
-      prompt: 'select_account',
-      access_type: 'online'
-    });
-  } else {
-    provider.setCustomParameters({
-      access_type: 'online'
-    });
+/**
+ * Loads Google Identity Services (GIS) script dynamically.
+ * Using GIS initTokenClient keeps Google Drive OAuth completely separate
+ * from Firebase Auth so switching Drive accounts never changes the main Sendarro user.
+ */
+export const loadGsiScript = (): Promise<void> => {
+  if (typeof window !== 'undefined' && window.google?.accounts?.oauth2) {
+    return Promise.resolve();
+  }
+  if (gsiLoadPromise) {
+    return gsiLoadPromise;
   }
 
-  try {
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Failed to obtain Google Drive access token.');
+  gsiLoadPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      const checkReady = () => {
+        if (window.google?.accounts?.oauth2) {
+          resolve();
+        } else {
+          setTimeout(checkReady, 50);
+        }
+      };
+      checkReady();
+      return;
     }
-    cachedAccessToken = credential.accessToken;
-    return cachedAccessToken;
-  } catch (error: any) {
-    console.error('Google Drive auth error:', error);
-    throw error;
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (window.google?.accounts?.oauth2) {
+        resolve();
+      } else {
+        gsiLoadPromise = null;
+        reject(new Error('Google Identity Services failed to initialize.'));
+      }
+    };
+    script.onerror = () => {
+      gsiLoadPromise = null;
+      reject(new Error('Failed to load Google Identity Services script.'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return gsiLoadPromise;
+};
+
+export const connectGoogleDrive = async (forceAccountSelect = false): Promise<string> => {
+  await loadGsiScript();
+
+  const clientId = (firebaseConfig as { oAuthClientId?: string }).oAuthClientId;
+  if (!clientId) {
+    throw new Error('Google OAuth Client ID is not configured.');
   }
+
+  return new Promise<string>((resolve, reject) => {
+    try {
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: DRIVE_SCOPES.join(' '),
+        callback: (tokenResponse: any) => {
+          if (tokenResponse?.error) {
+            const err: any = new Error(tokenResponse.error_description || tokenResponse.error);
+            if (tokenResponse.error === 'access_denied') {
+              err.code = 'auth/popup-closed-by-user';
+            }
+            reject(err);
+            return;
+          }
+          if (!tokenResponse?.access_token) {
+            reject(new Error('Failed to obtain Google Drive access token.'));
+            return;
+          }
+          cachedAccessToken = tokenResponse.access_token;
+          resolve(tokenResponse.access_token);
+        },
+        error_callback: (err: any) => {
+          const isClosed = err?.type === 'popup_closed';
+          const isBlocked = err?.type === 'popup_failed_to_open';
+          const msg = isClosed
+            ? 'Google Drive authorization popup was closed.'
+            : isBlocked
+              ? 'Popup blocked by browser. Please allow popups to connect Google Drive.'
+              : err?.message || 'Google Drive authorization failed.';
+          const errorObj: any = new Error(msg);
+          if (isClosed) {
+            errorObj.code = 'auth/popup-closed-by-user';
+          }
+          reject(errorObj);
+        }
+      });
+
+      tokenClient.requestAccessToken({
+        prompt: forceAccountSelect ? 'select_account' : '',
+        hint: !forceAccountSelect ? auth.currentUser?.email || undefined : undefined
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
 };
 
 export interface DriveFileItem {
