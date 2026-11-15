@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   Archive,
-  Bell,
   Calendar,
   CheckCircle2,
   Clock,
@@ -54,7 +53,6 @@ export interface DashboardClip {
   viewCount?: number;
   totalSize?: number;
   fileCount?: number;
-  hasWebhook?: boolean;
 }
 
 interface CollectionsDashboardProps {
@@ -716,12 +714,6 @@ export const CollectionsDashboard: React.FC<CollectionsDashboardProps> = ({
                         {clip.burnOnRead && (
                           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-red-700 border border-red-200 bg-red-50 px-1.5 py-0.5 rounded-none">
                             Burn
-                          </span>
-                        )}
-                        {isCollection && clip.hasWebhook && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase tracking-wider text-blue-700 border border-blue-200 bg-blue-50 px-1.5 py-0.5 rounded-none">
-                            <Bell className="w-2.5 h-2.5 shrink-0" />
-                            <span>Alerts</span>
                           </span>
                         )}
                       </div>

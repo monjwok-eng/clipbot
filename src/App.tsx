@@ -33,8 +33,8 @@ import {
   Camera,
   Archive,
   Calendar,
-  Bell,
-  ExternalLink
+  ExternalLink,
+  Menu
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { Html5QrcodeScanner } from 'html5-qrcode';
@@ -130,7 +130,6 @@ interface ClipData {
   viewCount?: number;
   totalSize?: number;
   fileCount?: number;
-  hasWebhook?: boolean;
 }
 
 // --- Constants ---
@@ -355,6 +354,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'app' | 'product' | 'pricing'>('app');
   const [currentLang, setCurrentLang] = useState<LanguageCode>(getInitialLanguage);
   const t = translations[currentLang] || translations.en;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     setAppLanguage(currentLang);
@@ -384,14 +384,9 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [burnOnRead, setBurnOnRead] = useState(false);
   const [collectionDeadline, setCollectionDeadline] = useState<string>('');
-  const [collectionWebhookUrl, setCollectionWebhookUrl] = useState<string>('');
-  const [testingWebhook, setTestingWebhook] = useState<boolean>(false);
   const [isZipping, setIsZipping] = useState(false);
   const [exportingDriveClipId, setExportingDriveClipId] = useState<string | null>(null);
   const [driveExportFolderUrls, setDriveExportFolderUrls] = useState<Record<string, string>>({});
-  const [showInboxWebhookEditor, setShowInboxWebhookEditor] = useState<boolean>(false);
-  const [inboxWebhookInput, setInboxWebhookInput] = useState<string>('');
-  const [savingInboxWebhook, setSavingInboxWebhook] = useState<boolean>(false);
   const [deadlineNowTick, setDeadlineNowTick] = useState<number>(() => Date.now());
   const [contributorName, setContributorName] = useState<string>('');
   const [contributorFiles, setContributorFiles] = useState<File[]>([]);
@@ -1530,20 +1525,6 @@ export default function App() {
       parsedDeadlineDate = candidate;
     }
 
-    const cleanWebhookUrl = isCollectionMode && isProMax ? collectionWebhookUrl.trim() : '';
-    if (cleanWebhookUrl) {
-      try {
-        const parsedWebhook = new URL(cleanWebhookUrl);
-        if (parsedWebhook.protocol !== 'https:') {
-          setStatus({ type: 'error', message: 'Webhook URL must start with https://' });
-          return;
-        }
-      } catch {
-        setStatus({ type: 'error', message: 'Please enter a valid Slack, Discord, or Webhook URL.' });
-        return;
-      }
-    }
-
     const maxChars = isPro ? 100000 : 10000;
     if (text.length > maxChars) {
       setStatus({ type: 'error', message: `Content too large. Max ${maxChars.toLocaleString()} characters. You are currently at ${text.length.toLocaleString()}.` });
@@ -1836,7 +1817,6 @@ export default function App() {
           isCollection: isCollectionMode,
           ...(isCollectionMode && !isProMax ? { maxSubmissions: 5 } : {}),
           ...(isCollectionMode && parsedDeadlineDate ? { submissionDeadline: Timestamp.fromDate(parsedDeadlineDate) } : {}),
-          hasWebhook: Boolean(cleanWebhookUrl),
           submissions: [],
           submissionCount: 0,
           uploadStatus: 'ready',
@@ -1851,12 +1831,6 @@ export default function App() {
         };
 
         await setDoc(doc(db, 'clips', newCode), clipData);
-        if (cleanWebhookUrl && auth.currentUser) {
-          await setDoc(doc(db, 'clips', newCode, 'private', 'settings'), {
-            webhookUrl: cleanWebhookUrl,
-            updatedAt: serverTimestamp()
-          });
-        }
         if (isCollectionMode && !isProMax && auth.currentUser) {
           setTrialCollectionsUsed((prev) => Math.max(prev + 1, 1));
           setDoc(doc(db, 'users', auth.currentUser.uid), {
@@ -1883,7 +1857,6 @@ export default function App() {
         setManualText('');
         setCustomCodeInput('');
         setCollectionDeadline('');
-        setCollectionWebhookUrl('');
         pendingUploadCodeRef.current = null;
         setStatus({ type: 'success', message: 'Upload complete! Your code is ready.' });
       } else {
@@ -1904,19 +1877,12 @@ export default function App() {
           isCollection: isCollectionMode,
           ...(isCollectionMode && !isProMax ? { maxSubmissions: 5 } : {}),
           ...(isCollectionMode && parsedDeadlineDate ? { submissionDeadline: Timestamp.fromDate(parsedDeadlineDate) } : {}),
-          hasWebhook: Boolean(cleanWebhookUrl),
           submissions: [],
           submissionCount: 0,
           uploadStatus: 'ready'
         };
 
         await setDoc(doc(db, 'clips', newCode), clipData);
-        if (cleanWebhookUrl && auth.currentUser) {
-          await setDoc(doc(db, 'clips', newCode, 'private', 'settings'), {
-            webhookUrl: cleanWebhookUrl,
-            updatedAt: serverTimestamp()
-          });
-        }
         if (isCollectionMode && !isProMax && auth.currentUser) {
           setTrialCollectionsUsed((prev) => Math.max(prev + 1, 1));
           setDoc(doc(db, 'users', auth.currentUser.uid), {
@@ -1935,7 +1901,6 @@ export default function App() {
         setManualText('');
         setCustomCodeInput('');
         setCollectionDeadline('');
-        setCollectionWebhookUrl('');
         setStatus({ type: 'idle', message: '' });
       }
     } catch (err: any) {
@@ -2386,21 +2351,6 @@ export default function App() {
         submissionCount: (retrievedClip?.submissionCount || 0) + 1
       });
 
-      if (retrievedClip?.hasWebhook) {
-        fetch('/api/notify-collection-webhook', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            code: targetCode,
-            contributorName: newSubmission.contributorName,
-            fileCount: uploadedFiles.length,
-            totalBytes,
-            files: uploadedFiles.map((f: any) => ({ fileName: f.fileName, fileSize: f.fileSize })),
-            submittedAt: newSubmission.submittedAt
-          })
-        }).catch((err) => console.warn('Webhook alert dispatch notice:', err));
-      }
-
       setTransferProgress(prev => prev ? {
         ...prev,
         bytesTransferred: totalBytes,
@@ -2532,107 +2482,6 @@ export default function App() {
       DEFAULT_DROPBOX_APP_KEY;
     loadDropboxScript(key).catch(() => {});
   }, [isProMax, collectionCountBadge, retrievedClip?.isCollection]);
-
-  // Load owner's private webhook setting whenever opening an owned Collection Inbox
-  useEffect(() => {
-    setShowInboxWebhookEditor(false);
-    if (!retrievedClip?.id || !retrievedClip?.isCollection || !user || retrievedClip.authorUid !== user.uid) {
-      setInboxWebhookInput('');
-      return;
-    }
-
-    let cancelled = false;
-    getDoc(doc(db, 'clips', retrievedClip.id, 'private', 'settings'))
-      .then((snap) => {
-        if (!cancelled) {
-          setInboxWebhookInput(snap.exists() ? (snap.data()?.webhookUrl || '') : '');
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setInboxWebhookInput('');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [retrievedClip?.id, retrievedClip?.isCollection, retrievedClip?.authorUid, user]);
-
-  const handleTestWebhook = async (rawWebhookUrl: string, title?: string, clipCode?: string) => {
-    const trimmed = rawWebhookUrl.trim();
-    if (!trimmed) {
-      setStatus({ type: 'error', message: 'Enter a Slack, Discord, or Webhook URL first.' });
-      return;
-    }
-    if (!user) {
-      setShowLoginModal(true);
-      return;
-    }
-
-    setTestingWebhook(true);
-    setStatus({ type: 'loading', message: 'Sending test notification...' });
-    try {
-      const idToken = await user.getIdToken();
-      const res = await fetch('/api/test-webhook', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          webhookUrl: trimmed,
-          collectionTitle: title || manualText.trim() || 'My Collection Box',
-          code: clipCode || customCodeInput.trim().toUpperCase() || undefined
-        })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || 'Webhook test failed.');
-      }
-      setStatus({ type: 'success', message: 'Test alert delivered! Check your Slack/Discord channel.' });
-    } catch (err: any) {
-      setStatus({ type: 'error', message: err?.message || 'Could not deliver test webhook.' });
-    } finally {
-      setTestingWebhook(false);
-    }
-  };
-
-  const handleSaveInboxWebhook = async () => {
-    if (!retrievedClip?.id || !user || retrievedClip.authorUid !== user.uid) return;
-    const trimmed = inboxWebhookInput.trim();
-    if (trimmed) {
-      try {
-        const parsed = new URL(trimmed);
-        if (parsed.protocol !== 'https:') {
-          setStatus({ type: 'error', message: 'Webhook URL must start with https://' });
-          return;
-        }
-      } catch {
-        setStatus({ type: 'error', message: 'Please enter a valid https:// webhook URL.' });
-        return;
-      }
-    }
-
-    setSavingInboxWebhook(true);
-    try {
-      await setDoc(doc(db, 'clips', retrievedClip.id, 'private', 'settings'), {
-        webhookUrl: trimmed || null,
-        updatedAt: serverTimestamp()
-      });
-      await updateDoc(doc(db, 'clips', retrievedClip.id), {
-        hasWebhook: Boolean(trimmed)
-      });
-      setRetrievedClip((prev: any) => (prev ? { ...prev, hasWebhook: Boolean(trimmed) } : prev));
-      setShowInboxWebhookEditor(false);
-      setStatus({
-        type: 'success',
-        message: trimmed ? 'Webhook alerts enabled for this collection!' : 'Webhook alerts removed.'
-      });
-    } catch (err: any) {
-      setStatus({ type: 'error', message: err?.message || 'Failed to update webhook settings.' });
-    } finally {
-      setSavingInboxWebhook(false);
-    }
-  };
 
   const handleExportCollectionToDrive = async (clip: DashboardClip) => {
     if (!isRealUser) {
@@ -2819,6 +2668,14 @@ export default function App() {
           {/* Header */}
       <header className="fixed top-0 left-0 right-0 border-b border-[#141414] p-2 sm:p-4 lg:px-8 flex justify-between items-center relative bg-[#E4E3E0]/90 backdrop-blur-md z-50">
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            className="md:hidden p-1.5 -ml-1 hover:bg-[#141414]/10 rounded-sm text-[#141414] cursor-pointer"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
           <SendarroLogo onClick={() => setCurrentView('app')} className="h-10 sm:h-12 md:h-14 max-h-14" />
         </div>
 
@@ -2901,6 +2758,81 @@ export default function App() {
           )}
         </div>
       </header>
+
+      {/* Mobile Navigation Menu Drawer */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-[#141414]/55 backdrop-blur-sm flex flex-col md:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+              className="w-4/5 max-w-xs h-full bg-[#E4E3E0] border-r-2 border-[#141414] p-6 flex flex-col justify-between shadow-[8px_0px_0px_0px_rgba(20,20,20,0.3)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="space-y-6">
+                <div className="flex items-center justify-between border-b border-[#141414]/20 pb-4">
+                  <SendarroLogo onClick={() => { setMobileMenuOpen(false); setCurrentView('app'); }} className="h-9 cursor-pointer" />
+                  <button
+                    type="button"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="p-1.5 hover:bg-[#141414]/10 rounded-sm text-[#141414] cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <nav className="space-y-3 font-serif italic text-lg font-medium text-neutral-950">
+                  <button
+                    type="button"
+                    onClick={() => { setMobileMenuOpen(false); setCurrentView('app'); }}
+                    className={`w-full text-left py-2 px-3 rounded-sm transition-colors cursor-pointer ${currentView === 'app' ? 'bg-[#141414] text-[#E4E3E0] not-italic font-bold font-mono text-xs uppercase tracking-widest' : 'hover:bg-neutral-200'}`}
+                  >
+                    Transfer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMobileMenuOpen(false); setCurrentView('product'); }}
+                    className={`w-full text-left py-2 px-3 rounded-sm transition-colors cursor-pointer ${currentView === 'product' ? 'bg-[#141414] text-[#E4E3E0] not-italic font-bold font-mono text-xs uppercase tracking-widest' : 'hover:bg-neutral-200'}`}
+                  >
+                    {t.product}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMobileMenuOpen(false); setCurrentView('pricing'); }}
+                    className={`w-full text-left py-2 px-3 rounded-sm transition-colors cursor-pointer ${currentView === 'pricing' ? 'bg-[#141414] text-[#E4E3E0] not-italic font-bold font-mono text-xs uppercase tracking-widest' : 'hover:bg-neutral-200'}`}
+                  >
+                    {t.pricing}
+                  </button>
+                </nav>
+              </div>
+
+              <div className="pt-6 border-t border-[#141414]/20 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-neutral-600">Language</span>
+                  <LanguageSelector currentLang={currentLang} onLanguageChange={setCurrentLang} />
+                </div>
+                {user && (
+                  <button
+                    type="button"
+                    onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
+                    className="w-full py-2.5 bg-red-50 border border-red-200 text-red-700 rounded-sm font-mono font-bold uppercase tracking-wider text-xs hover:bg-red-100 transition-colors cursor-pointer"
+                  >
+                    {t.logout}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
           {/* Login Modal */}
           <AnimatePresence>
@@ -3420,7 +3352,7 @@ export default function App() {
                               Upgrade to Pro Max for unlimited Collection Boxes
                             </h3>
                             <p className="text-xs text-neutral-600 leading-relaxed">
-                              Unlock unlimited drop boxes & submissions, 2 GB uploads, auto-closing deadlines, Slack/Discord alerts, and 1-click ZIP / Google Drive / Dropbox export.
+                              Unlock unlimited drop boxes & submissions, 2 GB uploads, auto-closing deadlines, and 1-click ZIP / Google Drive / Dropbox export.
                             </p>
                           </div>
                           <div className="flex flex-col sm:flex-row gap-2">
@@ -3462,74 +3394,39 @@ export default function App() {
                             className="w-full p-3 border border-[#141414] rounded-sm font-mono text-xs bg-white"
                           />
                           {isProMax ? (
-                            <>
-                              <div className="space-y-1.5 pt-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  <label
-                                    htmlFor="collection-deadline-input"
-                                    className="text-[10px] uppercase tracking-wider font-bold text-neutral-700 font-mono flex items-center gap-1.5"
+                            <div className="space-y-1.5 pt-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <label
+                                  htmlFor="collection-deadline-input"
+                                  className="text-[10px] uppercase tracking-wider font-bold text-neutral-700 font-mono flex items-center gap-1.5"
+                                >
+                                  <Calendar className="w-3.5 h-3.5 text-blue-700" />
+                                  <span>Submission Deadline (Optional)</span>
+                                </label>
+                                {collectionDeadline && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCollectionDeadline('')}
+                                    className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 hover:text-[#141414] underline cursor-pointer"
                                   >
-                                    <Calendar className="w-3.5 h-3.5 text-blue-700" />
-                                    <span>Submission Deadline (Optional)</span>
-                                  </label>
-                                  {collectionDeadline && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setCollectionDeadline('')}
-                                      className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600 hover:text-[#141414] underline cursor-pointer"
-                                    >
-                                      Clear
-                                    </button>
-                                  )}
-                                </div>
-                                <input
-                                  id="collection-deadline-input"
-                                  type="datetime-local"
-                                  min={toLocalDateTimeInputValue(new Date())}
-                                  value={collectionDeadline}
-                                  onChange={(e) => setCollectionDeadline(e.target.value)}
-                                  className="w-full p-2.5 border border-[#141414] rounded-sm font-mono text-xs bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-[#141414]"
-                                />
-                                <p className="text-[10px] font-mono text-neutral-600">
-                                  {collectionDeadline
-                                    ? `Auto-closes submissions on ${new Date(collectionDeadline).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`
-                                    : 'Leave blank to keep open until clip expiration.'}
-                                </p>
+                                    Clear
+                                  </button>
+                                )}
                               </div>
-
-                              <div className="space-y-1.5 pt-2 border-t border-blue-200/80">
-                                <div className="flex items-center justify-between gap-2">
-                                  <label
-                                    htmlFor="collection-webhook-input"
-                                    className="text-[10px] uppercase tracking-wider font-bold text-neutral-700 font-mono flex items-center gap-1.5"
-                                  >
-                                    <Bell className="w-3.5 h-3.5 text-blue-700" />
-                                    <span>Alert Webhook URL (Optional)</span>
-                                  </label>
-                                  {collectionWebhookUrl.trim() && (
-                                    <button
-                                      type="button"
-                                      disabled={testingWebhook}
-                                      onClick={() => handleTestWebhook(collectionWebhookUrl)}
-                                      className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-700 hover:text-blue-900 underline cursor-pointer disabled:opacity-50"
-                                    >
-                                      {testingWebhook ? 'Testing...' : 'Send Test'}
-                                    </button>
-                                  )}
-                                </div>
-                                <input
-                                  id="collection-webhook-input"
-                                  type="url"
-                                  placeholder="https://discord.com/api/webhooks/... or hooks.slack.com/..."
-                                  value={collectionWebhookUrl}
-                                  onChange={(e) => setCollectionWebhookUrl(e.target.value)}
-                                  className="w-full p-2.5 border border-[#141414] rounded-sm font-mono text-xs bg-white placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-[#141414]"
-                                />
-                                <p className="text-[10px] font-mono text-neutral-600">
-                                  Instant alert in Slack, Discord, Teams, or Zapier/Make on every new upload.
-                                </p>
-                              </div>
-                            </>
+                              <input
+                                id="collection-deadline-input"
+                                type="datetime-local"
+                                min={toLocalDateTimeInputValue(new Date())}
+                                value={collectionDeadline}
+                                onChange={(e) => setCollectionDeadline(e.target.value)}
+                                className="w-full p-2.5 border border-[#141414] rounded-sm font-mono text-xs bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-[#141414]"
+                              />
+                              <p className="text-[10px] font-mono text-neutral-600">
+                                {collectionDeadline
+                                  ? `Auto-closes submissions on ${new Date(collectionDeadline).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`
+                                  : 'Leave blank to keep open until clip expiration.'}
+                              </p>
+                            </div>
                           ) : (
                             <div className="space-y-2 pt-1">
                               <button
@@ -3540,20 +3437,6 @@ export default function App() {
                                 <span className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600">
                                   <Calendar className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
                                   <span>Auto-Closing Deadlines</span>
-                                </span>
-                                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase tracking-wider text-blue-700 shrink-0">
-                                  <Lock className="w-3 h-3" />
-                                  <span>Pro Max</span>
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setCurrentView('pricing')}
-                                className="w-full p-2.5 bg-white/80 hover:bg-white border border-blue-200 rounded-sm flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
-                              >
-                                <span className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-600">
-                                  <Bell className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-                                  <span>Slack / Discord / Webhook Alerts</span>
                                 </span>
                                 <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase tracking-wider text-blue-700 shrink-0">
                                   <Lock className="w-3 h-3" />
@@ -3986,67 +3869,7 @@ export default function App() {
                                   <div className="text-xs font-bold uppercase tracking-wider text-neutral-800">
                                     Incoming Submissions ({collectionCurrentCount}{collectionSubmissionLimit ? ` / ${collectionSubmissionLimit}` : ''})
                                   </div>
-                                  {isProMax ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => setShowInboxWebhookEditor((prev) => !prev)}
-                                      className={`px-2.5 py-1.5 border rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
-                                        retrievedClip.hasWebhook
-                                          ? 'border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100'
-                                          : 'border-[#141414]/25 bg-white text-neutral-700 hover:border-[#141414]'
-                                      }`}
-                                    >
-                                      <Bell className="w-3 h-3 shrink-0" />
-                                      <span>{retrievedClip.hasWebhook ? 'Webhook Alerts On' : 'Add Slack/Discord Alert'}</span>
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => setCurrentView('pricing')}
-                                      className="px-2.5 py-1.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer hover:bg-blue-100"
-                                    >
-                                      <Lock className="w-3 h-3 shrink-0" />
-                                      <span>Webhook Alerts · Pro Max</span>
-                                    </button>
-                                  )}
                                 </div>
-
-                                {isProMax && showInboxWebhookEditor && (
-                                  <div className="p-3 bg-[#F9F9F8] border border-[#141414]/25 rounded-sm space-y-2">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-700">
-                                        Slack / Discord / Zapier Webhook URL
-                                      </span>
-                                      {inboxWebhookInput.trim() && (
-                                        <button
-                                          type="button"
-                                          disabled={testingWebhook}
-                                          onClick={() => handleTestWebhook(inboxWebhookInput, retrievedClip.content, retrievedClip.id)}
-                                          className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-700 underline cursor-pointer disabled:opacity-50"
-                                        >
-                                          {testingWebhook ? 'Sending...' : 'Test Alert'}
-                                        </button>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-col sm:flex-row gap-2">
-                                      <input
-                                        type="url"
-                                        placeholder="https://discord.com/api/webhooks/... or hooks.slack.com/..."
-                                        value={inboxWebhookInput}
-                                        onChange={(e) => setInboxWebhookInput(e.target.value)}
-                                        className="flex-1 p-2 border border-[#141414] rounded-sm font-mono text-xs bg-white placeholder:text-neutral-400 focus:outline-none"
-                                      />
-                                      <button
-                                        type="button"
-                                        disabled={savingInboxWebhook}
-                                        onClick={handleSaveInboxWebhook}
-                                        className="bg-[#141414] text-[#E4E3E0] px-3.5 py-2 rounded-sm text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-neutral-800 whitespace-nowrap cursor-pointer disabled:opacity-50"
-                                      >
-                                        {savingInboxWebhook ? 'Saving...' : 'Save Alert'}
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
 
                                 {retrievedClip.submissions && retrievedClip.submissions.length > 0 && (() => {
                                   const allEntries = retrievedClip.submissions.flatMap((sub: any, sIdx: number) =>
