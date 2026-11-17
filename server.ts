@@ -938,17 +938,276 @@ app.use("/api", (req, res) => {
   res.status(404).json({ error: `API route ${req.method} ${req.url} not found` });
 });
 
+// --- SEO Metadata, Sitemap & Semantic HTML Injection ---
+function escapeHtmlAttr(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function getRequestBaseUrl(req: express.Request): string {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL.replace(/\/$/, '');
+  }
+  const protoHeader = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+  const proto = protoHeader.split(',')[0].trim();
+  const host = req.get('host') || `localhost:${PORT}`;
+  return `${proto}://${host}`;
+}
+
+function getRouteSeoPayload(pathname: string, baseUrl: string) {
+  const normalized = pathname.toLowerCase().replace(/\/+$/, '') || '/';
+  const isProduct = normalized === '/product';
+  const isPricing = normalized === '/pricing';
+
+  const canonicalPath = isProduct ? '/product' : isPricing ? '/pricing' : '/';
+  const canonicalUrl = `${baseUrl}${canonicalPath}`;
+
+  const title = isProduct
+    ? 'Sendarro Product — Collection Drop Boxes & Instant File Beaming'
+    : isPricing
+    ? 'Sendarro Pricing — Free Collection Trial, Pro & Pro Max'
+    : 'Sendarro — Collection Drop Boxes & Instant File Sharing';
+
+  const description = isProduct
+    ? 'Discover Sendarro Collection Drop Boxes: gather homework, event media, and client files without logins, export in 1 click to ZIP or Drive, and share up to 2GB.'
+    : isPricing
+    ? 'Start free with 1 Trial Collection Box and 10MB sharing, upgrade to Pro ($4.99/mo) for 500MB transfers, or Pro Max ($9.99/mo) for unlimited Collection Boxes.'
+    : 'Collect files from teammates, students, or clients in one organized inbox with zero contributor logins, or share text and files up to 2GB via 8-character codes.';
+
+  const keywords = isProduct
+    ? 'collection drop box, file collection inbox, client file request, teacher assignment dropbox, bulk zip export, google drive file intake, 7 day locked vault'
+    : isPricing
+    ? 'sendarro pricing, collection box pricing, file dropbox alternative pricing, 2gb file transfer plan, google drive batch export'
+    : 'collection drop box, collect files without login, sendarro, file request link, 8 character file transfer, universal clipboard';
+
+  const sharedOffers = [
+    {
+      '@type': 'Offer',
+      name: 'Free Guest & Trial',
+      price: '0',
+      priceCurrency: 'USD',
+      description: '10MB file limit, 10,000 character clips, and 1 Free Trial Collection Box (up to 5 submissions, 24h window).',
+    },
+    {
+      '@type': 'Offer',
+      name: 'Pro',
+      price: '4.99',
+      priceCurrency: 'USD',
+      description: '500MB Cloudflare R2 transfers, 100,000 character clips, custom aliases, 24h expiry, and 1 Free Trial Collection Box.',
+    },
+    {
+      '@type': 'Offer',
+      name: 'Pro Max',
+      price: '9.99',
+      priceCurrency: 'USD',
+      description: 'Unlimited Collection Drop Boxes & submissions, 2GB file ceiling, auto-closing deadlines, 1-click ZIP/Google Drive/Dropbox export, and 7-Day Locked Vault.',
+    },
+  ];
+
+  const faqEntities = isPricing
+    ? [
+        {
+          '@type': 'Question',
+          name: 'Do contributors uploading to my Collection Box need a paid plan or account?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'No. Contributors never need a Sendarro account or subscription to upload files to your Collection Box.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'What is the difference between Pro and Pro Max?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Pro ($4.99/mo) unlocks 500MB transfers, 100k character clips, custom aliases, and 24h expiry. Pro Max ($9.99/mo) adds Unlimited Collection Boxes, 2GB uploads, auto-closing deadlines, 1-click ZIP/Drive/Dropbox export, and the 7-Day Locked Vault.',
+          },
+        },
+      ]
+    : [
+        {
+          '@type': 'Question',
+          name: 'How do Sendarro Collection Boxes work without contributor logins?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Create a Collection Box and share its 8-character code or QR link. Anyone can open the box, enter their name, and upload files directly without creating an account.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Can I try a Collection Box before upgrading to Pro Max?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Yes. Signed-in Google accounts receive 1 Free Trial Collection Box supporting up to 5 contributor submissions over a 24-hour window.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'How do 1-click ZIP, Google Drive, and Dropbox exports organize submissions?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Pro Max lets you download every submission in one ZIP archive, export directly into Google Drive sorted into contributor subfolders, or save straight to Dropbox.',
+          },
+        },
+      ];
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'SoftwareApplication',
+        name: 'Sendarro',
+        applicationCategory: 'UtilitiesApplication',
+        operatingSystem: 'Web, Windows, macOS, iOS, Android',
+        url: canonicalUrl,
+        description,
+        offers: sharedOffers,
+      },
+      {
+        '@type': 'FAQPage',
+        mainEntity: faqEntities,
+      },
+    ],
+  };
+
+  const semanticRootHtml = isProduct
+    ? `<main data-seo-prerender="product">
+        <header><nav aria-label="Primary"><a href="/">Transfer</a> | <a href="/product">Product</a> | <a href="/pricing">Pricing</a></nav></header>
+        <section>
+          <h1>Collect files from anyone into one organized inbox.</h1>
+          <p>${escapeHtmlAttr(description)}</p>
+          <h2>How Collection Drop Boxes Work</h2>
+          <ol>
+            <li>Open a Collection Box with 1 Free Trial Box (up to 5 submissions, 24h open) or unlimited boxes on Pro Max.</li>
+            <li>Contributors upload files via 8-character code or QR link with zero login required.</li>
+            <li>Export organized contributor submissions in 1 click as a ZIP archive, Google Drive subfolders, or Dropbox.</li>
+          </ol>
+          <h2>7-Day Locked Vault &amp; Instant Beaming</h2>
+          <p>Pro Max protects expired clips and Collection Boxes inside your 7-Day Locked Vault with 15-minute link reactivation. Transfer text up to 100,000 characters and files up to 2 GB via Cloudflare R2.</p>
+        </section>
+        <section>
+          <h2>Frequently Asked Questions</h2>
+          <h3>How do Sendarro Collection Boxes work without contributor logins?</h3>
+          <p>Share an 8-character code or QR link; contributors enter their name and upload files straight from desktop or mobile without creating an account.</p>
+          <h3>Can I try a Collection Box before upgrading to Pro Max?</h3>
+          <p>Yes. Every signed-in Google account gets 1 Free Trial Collection Box for up to 5 submissions over 24 hours.</p>
+        </section>
+      </main>`
+    : isPricing
+    ? `<main data-seo-prerender="pricing">
+        <header><nav aria-label="Primary"><a href="/">Transfer</a> | <a href="/product">Product</a> | <a href="/pricing">Pricing</a></nav></header>
+        <section>
+          <h1>Simple plans built around Collection Drop Boxes</h1>
+          <p>${escapeHtmlAttr(description)}</p>
+          <h2>Plans &amp; Pricing</h2>
+          <ul>
+            <li><strong>Free ($0)</strong>: 1 Free Trial Collection Box (up to 5 submissions, 24h), 10 MB file transfer limit, 10,000 characters, QR beaming, ZIP download.</li>
+            <li><strong>Pro ($4.99 / month)</strong>: 500 MB Cloudflare R2 file ceiling, 100,000 characters, custom alias codes, 15m–24h clip expiry, includes 1 Free Trial Collection Box.</li>
+            <li><strong>Pro Max ($9.99 / month)</strong>: Unlimited Collection Drop Boxes &amp; submissions, 2 GB Cloudflare R2 file ceiling, auto-closing submission deadlines, 1-click ZIP / Google Drive subfolders / Dropbox export, and 7-Day Locked Vault with 15m reactivation.</li>
+          </ul>
+        </section>
+        <section>
+          <h2>Pricing &amp; Collection FAQ</h2>
+          <h3>Do contributors uploading to my Collection Box need a paid plan or account?</h3>
+          <p>No. Contributors never need a Sendarro account or subscription to upload files.</p>
+          <h3>What is the difference between Pro and Pro Max?</h3>
+          <p>Pro ($4.99/mo) unlocks 500 MB files, 100k chars, custom aliases, and 24h expiry. Pro Max ($9.99/mo) adds Unlimited Collection Boxes, 2 GB uploads, deadlines, 1-click ZIP/Drive/Dropbox batch exports, and the 7-Day Locked Vault.</p>
+        </section>
+      </main>`
+    : `<main data-seo-prerender="home">
+        <header><nav aria-label="Primary"><a href="/">Transfer</a> | <a href="/product">Product</a> | <a href="/pricing">Pricing</a></nav></header>
+        <section>
+          <h1>Sendarro — Collection Drop Boxes &amp; Instant File Sharing</h1>
+          <p>${escapeHtmlAttr(description)}</p>
+          <p>Free ($0 · 1 Trial Collection Box &amp; 10 MB transfers) · Pro ($4.99/mo · 500 MB &amp; 100k chars) · Pro Max ($9.99/mo · Unlimited Collection Boxes, 2 GB, Batch Drive/Dropbox/ZIP Export &amp; 7-Day Locked Vault).</p>
+        </section>
+      </main>`;
+
+  return { title, description, keywords, canonicalUrl, ogImage: `${baseUrl}/sendarro-logo.png`, jsonLd, semanticRootHtml };
+}
+
+function injectSeoIntoHtml(rawHtml: string, req: express.Request): string {
+  const baseUrl = getRequestBaseUrl(req);
+  const seo = getRouteSeoPayload(req.path, baseUrl);
+  const safeTitle = escapeHtmlAttr(seo.title);
+  const safeDesc = escapeHtmlAttr(seo.description);
+  const safeKeywords = escapeHtmlAttr(seo.keywords);
+  const safeUrl = escapeHtmlAttr(seo.canonicalUrl);
+  const safeImage = escapeHtmlAttr(seo.ogImage);
+
+  let out = rawHtml
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${safeTitle}</title>`)
+    .replace(/<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i, `<meta name="description" content="${safeDesc}" />`)
+    .replace(/<meta\s+name="keywords"\s+content="[^"]*"\s*\/?>/i, `<meta name="keywords" content="${safeKeywords}" />`)
+    .replace(/<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/i, `<meta property="og:title" content="${safeTitle}" />`)
+    .replace(/<meta\s+property="og:description"\s+content="[^"]*"\s*\/?>/i, `<meta property="og:description" content="${safeDesc}" />`)
+    .replace(/<meta\s+property="og:image"\s+content="[^"]*"\s*\/?>/i, `<meta property="og:image" content="${safeImage}" />`)
+    .replace(/<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:title" content="${safeTitle}" />`)
+    .replace(/<meta\s+name="twitter:description"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${safeDesc}" />`)
+    .replace(/<meta\s+name="twitter:image"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:image" content="${safeImage}" />`)
+    .replace(
+      /<script\s+id="sendarro-jsonld"\s+type="application\/ld\+json">[\s\S]*?<\/script>/i,
+      `<script id="sendarro-jsonld" type="application/ld+json">${JSON.stringify(seo.jsonLd)}</script>`
+    )
+    .replace(
+      /<div id="root"><\/div>/i,
+      `<div id="root">${seo.semanticRootHtml}</div>`
+    );
+
+  if (!out.includes('rel="canonical"')) {
+    out = out.replace(
+      '</head>',
+      `  <meta property="og:url" content="${safeUrl}" />\n    <link rel="canonical" href="${safeUrl}" />\n  </head>`
+    );
+  }
+  return out;
+}
+
+app.get('/robots.txt', (req, res) => {
+  const baseUrl = getRequestBaseUrl(req);
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nSitemap: ${baseUrl}/sitemap.xml\n`);
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  const baseUrl = getRequestBaseUrl(req);
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${baseUrl}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>${baseUrl}/product</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>${baseUrl}/pricing</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+</urlset>`;
+  res.type('application/xml').send(xml);
+});
+
 // Vite middleware for development
 if (process.env.NODE_ENV !== "production") {
   const vite = await createViteServer({
     server: { middlewareMode: true },
     appType: "spa",
   });
+
+  app.get(['/', '/product', '/pricing'], async (req, res, next) => {
+    try {
+      const indexPath = path.join(__dirname, 'index.html');
+      const rawHtml = fs.readFileSync(indexPath, 'utf-8');
+      const enriched = injectSeoIntoHtml(rawHtml, req);
+      const transformed = await vite.transformIndexHtml(req.originalUrl, enriched);
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(transformed);
+    } catch (e) {
+      next(e);
+    }
+  });
+
   app.use(vite.middlewares);
 } else {
-  app.use(express.static(path.join(__dirname, "dist")));
+  app.use(express.static(path.join(__dirname, "dist"), { index: false }));
   app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "dist", "index.html"));
+    const distIndexPath = path.join(__dirname, "dist", "index.html");
+    const rawHtml = fs.readFileSync(distIndexPath, 'utf-8');
+    const enriched = injectSeoIntoHtml(rawHtml, req);
+    res.status(200).set({ 'Content-Type': 'text/html' }).send(enriched);
   });
 }
 

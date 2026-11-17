@@ -84,6 +84,7 @@ import { connectGoogleDrive, getDriveAccessToken as getCachedDriveToken, clearDr
 import { openDropboxChooser, openDropboxSaver, loadDropboxScript, DEFAULT_DROPBOX_APP_KEY } from './utils/dropbox';
 import { getInitialLanguage, translations, LanguageCode, setAppLanguage } from './utils/i18n';
 import { LanguageSelector } from './components/LanguageSelector';
+import { AppView, useDocumentSeo } from './utils/seo';
 
 // --- Types ---
 
@@ -351,10 +352,35 @@ export default function App() {
   const [showLegalModal, setShowLegalModal] = useState(false);
   const [showCookieBanner, setShowCookieBanner] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [currentView, setCurrentView] = useState<'app' | 'product' | 'pricing'>('app');
+  const getInitialViewFromPath = (): AppView => {
+    const pathname = window.location.pathname.toLowerCase();
+    if (pathname === '/product' || pathname.startsWith('/product/')) return 'product';
+    if (pathname === '/pricing' || pathname.startsWith('/pricing/')) return 'pricing';
+    return 'app';
+  };
+  const [currentView, setCurrentView] = useState<AppView>(getInitialViewFromPath);
   const [currentLang, setCurrentLang] = useState<LanguageCode>(getInitialLanguage);
   const t = translations[currentLang] || translations.en;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useDocumentSeo(currentView);
+
+  const navigateToView = (nextView: AppView) => {
+    setCurrentView(nextView);
+    const targetPath = nextView === 'app' ? '/' : `/${nextView}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ view: nextView }, '', targetPath);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentView(getInitialViewFromPath());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   useEffect(() => {
     setAppLanguage(currentLang);
@@ -2663,7 +2689,7 @@ export default function App() {
       ) : (
         <>
           <AnimatePresence>
-            {!user && !isGuest && <LandingPage onLogin={handleLogin} onGuest={handleGuestEnter} />}
+            {!user && !isGuest && currentView === 'app' && <LandingPage onLogin={handleLogin} onGuest={handleGuestEnter} />}
           </AnimatePresence>
           {/* Header */}
       <header className="fixed top-0 left-0 right-0 border-b border-[#141414] p-2 sm:p-4 lg:px-8 flex justify-between items-center relative bg-[#E4E3E0]/90 backdrop-blur-md z-50">
@@ -2676,24 +2702,24 @@ export default function App() {
           >
             <Menu className="w-5 h-5" />
           </button>
-          <SendarroLogo onClick={() => setCurrentView('app')} className="h-10 sm:h-12 md:h-14 max-h-14" />
+          <SendarroLogo onClick={() => navigateToView('app')} className="h-10 sm:h-12 md:h-14 max-h-14" />
         </div>
 
         <nav className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-8 font-serif italic text-base sm:text-lg font-medium text-neutral-900 tracking-wide">
           <button 
-            onClick={() => setCurrentView('app')} 
+            onClick={() => navigateToView('app')} 
             className={`hover:text-black transition-colors cursor-pointer ${currentView === 'app' ? 'underline underline-offset-8 text-black font-semibold' : 'text-neutral-700'}`}
           >
             Transfer
           </button>
           <button 
-            onClick={() => setCurrentView('product')} 
+            onClick={() => navigateToView('product')} 
             className={`hover:text-black transition-colors cursor-pointer ${currentView === 'product' ? 'underline underline-offset-8 text-black font-semibold' : 'text-neutral-700'}`}
           >
             {t.product}
           </button>
           <button 
-            onClick={() => setCurrentView('pricing')} 
+            onClick={() => navigateToView('pricing')} 
             className={`hover:text-black transition-colors cursor-pointer ${currentView === 'pricing' ? 'underline underline-offset-8 text-black font-semibold' : 'text-neutral-700'}`}
           >
             {t.pricing}
@@ -2705,7 +2731,7 @@ export default function App() {
             <div className="flex items-center gap-3 sm:gap-4">
               {tier !== 'promax' && (
                 <button 
-                  onClick={() => setCurrentView('pricing')}
+                  onClick={() => navigateToView('pricing')}
                   className="text-[#141414] hover:text-black text-xs sm:text-sm font-semibold underline decoration-emerald-500 decoration-2 underline-offset-4 transition-colors cursor-pointer"
                 >
                   {tier === 'pro' ? 'Go Pro Max' : 'Upgrade'}
@@ -2779,7 +2805,7 @@ export default function App() {
             >
               <div className="space-y-6">
                 <div className="flex items-center justify-between border-b border-[#141414]/20 pb-4">
-                  <SendarroLogo onClick={() => { setMobileMenuOpen(false); setCurrentView('app'); }} className="h-9 cursor-pointer" />
+                  <SendarroLogo onClick={() => { setMobileMenuOpen(false); navigateToView('app'); }} className="h-9 cursor-pointer" />
                   <button
                     type="button"
                     onClick={() => setMobileMenuOpen(false)}
@@ -2792,21 +2818,21 @@ export default function App() {
                 <nav className="space-y-3 font-serif italic text-lg font-medium text-neutral-950">
                   <button
                     type="button"
-                    onClick={() => { setMobileMenuOpen(false); setCurrentView('app'); }}
+                    onClick={() => { setMobileMenuOpen(false); navigateToView('app'); }}
                     className={`w-full text-left py-2 px-3 rounded-sm transition-colors cursor-pointer ${currentView === 'app' ? 'bg-[#141414] text-[#E4E3E0] not-italic font-bold font-mono text-xs uppercase tracking-widest' : 'hover:bg-neutral-200'}`}
                   >
                     Transfer
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setMobileMenuOpen(false); setCurrentView('product'); }}
+                    onClick={() => { setMobileMenuOpen(false); navigateToView('product'); }}
                     className={`w-full text-left py-2 px-3 rounded-sm transition-colors cursor-pointer ${currentView === 'product' ? 'bg-[#141414] text-[#E4E3E0] not-italic font-bold font-mono text-xs uppercase tracking-widest' : 'hover:bg-neutral-200'}`}
                   >
                     {t.product}
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setMobileMenuOpen(false); setCurrentView('pricing'); }}
+                    onClick={() => { setMobileMenuOpen(false); navigateToView('pricing'); }}
                     className={`w-full text-left py-2 px-3 rounded-sm transition-colors cursor-pointer ${currentView === 'pricing' ? 'bg-[#141414] text-[#E4E3E0] not-italic font-bold font-mono text-xs uppercase tracking-widest' : 'hover:bg-neutral-200'}`}
                   >
                     {t.pricing}
@@ -2958,15 +2984,33 @@ export default function App() {
 
       {currentView === 'product' ? (
         <ProductPage 
-          onBackToApp={() => setCurrentView('app')} 
-          onNavigateToPricing={() => setCurrentView('pricing')} 
+          onBackToApp={() => {
+            if (!user && !isGuest) handleGuestEnter();
+            navigateToView('app');
+          }}
+          onTryCollectionBox={() => {
+            if (!user && !isGuest) handleGuestEnter();
+            setShareMode('collection');
+            setActiveTab('share');
+            navigateToView('app');
+          }}
+          onNavigateToPricing={() => navigateToView('pricing')} 
           onOpenAuth={() => setShowLoginModal(true)} 
           currentLang={currentLang}
         />
       ) : currentView === 'pricing' ? (
         <PricingPage 
-          onBackToApp={() => setCurrentView('app')} 
-          onNavigateToProduct={() => setCurrentView('product')} 
+          onBackToApp={() => {
+            if (!user && !isGuest) handleGuestEnter();
+            navigateToView('app');
+          }}
+          onTryCollectionBox={() => {
+            if (!user && !isGuest) handleGuestEnter();
+            setShareMode('collection');
+            setActiveTab('share');
+            navigateToView('app');
+          }}
+          onNavigateToProduct={() => navigateToView('product')} 
           onUpgrade={handleCheckout} 
           onRestorePurchases={handleRestorePurchases} 
           tier={tier} 
